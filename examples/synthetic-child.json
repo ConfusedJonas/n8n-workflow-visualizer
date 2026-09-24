@@ -1,0 +1,67 @@
+{
+  "id": "synthetic-child",
+  "name": "Draft generator",
+  "active": false,
+  "nodes": [
+    {
+      "id": "input",
+      "name": "When Executed by Another Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 100],
+      "parameters": {"inputSource": "passthrough"}
+    },
+    {
+      "id": "research",
+      "name": "Research context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [270, 0],
+      "parameters": {}
+    },
+    {
+      "id": "outline",
+      "name": "Build outline",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [270, 200],
+      "parameters": {}
+    },
+    {
+      "id": "agent",
+      "name": "Writing agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [580, 100],
+      "parameters": {}
+    },
+    {
+      "id": "model",
+      "name": "Local model placeholder",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [520, 340],
+      "parameters": {}
+    },
+    {
+      "id": "memory",
+      "name": "Conversation memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [720, 340],
+      "parameters": {}
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [[
+        {"node": "Research context", "type": "main", "index": 0},
+        {"node": "Build outline", "type": "main", "index": 0}
+      ]]
+    },
+    "Research context": {"main": [[{"node": "Writing agent", "type": "main", "index": 0}]]},
+    "Build outline": {"main": [[{"node": "Writing agent", "type": "main", "index": 0}]]},
+    "Local model placeholder": {"ai_languageModel": [[{"node": "Writing agent", "type": "ai_languageModel", "index": 0}]]},
+    "Conversation memory": {"ai_memory": [[{"node": "Writing agent", "type": "ai_memory", "index": 0}]]}
+  }
+}
