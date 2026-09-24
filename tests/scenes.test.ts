@@ -15,7 +15,7 @@ describe('scene builders', () => {
       A: { future: [null, [{ node: 'B', type: 'futureTarget', index: 4 }]] },
     });
     const scene = buildOriginalScene(parse(raw));
-    expect(scene.nodes.find((item) => item.id.endsWith('node:a'))).toMatchObject({ x: -100, y: 25 });
+    expect(scene.nodes.find((item) => item.id.endsWith('node:a'))).toMatchObject({ x: -100, y: 25, width: 100, height: 100 });
     expect(scene.edges[0]).toMatchObject({ sourceHandle: 'out:future:1', targetHandle: 'in:futureTarget:4' });
   });
 

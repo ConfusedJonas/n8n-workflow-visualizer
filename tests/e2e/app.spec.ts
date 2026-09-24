@@ -19,6 +19,13 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByRole('dialog', { name: 'Import results' })).toContainText('1 accepted · 1 skipped');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
   await expect(page.getByText('1 missing reference')).toBeVisible();
+  const nodeGeometry = await page.getByTestId('graph-stage').locator('.canvas-node').first().evaluate((node) => {
+    const tile = getComputedStyle(node.querySelector('.node-tile')!);
+    const footprint = getComputedStyle(node);
+    return { footprintWidth: footprint.width, footprintHeight: footprint.height, tileWidth: tile.width, tileHeight: tile.height };
+  });
+  expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '100px', tileWidth: '64px', tileHeight: '64px' });
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
   await page.getByRole('button', { name: 'Dependency' }).click();
   await expect(page.getByTestId('graph-stage').locator('.dependency-card')).toHaveCount(1);

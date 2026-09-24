@@ -16,7 +16,7 @@ export default defineConfig({
       transformIndexHtml(html) {
         return html.replace(
           '<!-- production-csp -->',
-          '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; font-src \'self\'; connect-src \'none\'; object-src \'none\'; frame-src \'none\'; base-uri \'self\'; form-action \'none\'">',
+          '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data: blob:; font-src \'self\'; connect-src \'none\'; worker-src \'self\' blob:; object-src \'none\'; frame-src \'none\'; base-uri \'self\'; form-action \'none\'">',
         );
       },
     },

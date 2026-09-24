@@ -2,8 +2,11 @@ import type { NormalizedWorkflow } from '../../n8n/types';
 import type { GraphScene, SceneEdge, SceneNode } from '../scene';
 import { edgeStyle, makeHandle } from '../scene';
 
-export const DEFAULT_NODE_WIDTH = 190;
-export const DEFAULT_NODE_HEIGHT = 76;
+// n8n positions nodes by a compact canvas footprint. Keeping the footprint
+// separate from the inner tile preserves the exported coordinates and leaves
+// room for the label without making neighbouring nodes collide.
+export const DEFAULT_NODE_WIDTH = 100;
+export const DEFAULT_NODE_HEIGHT = 100;
 
 export function buildOriginalScene(workflow: NormalizedWorkflow, prefix = workflow.key): GraphScene {
   const nodeId = (id: string) => `${prefix}/node:${id}`;
@@ -20,6 +23,8 @@ export function buildOriginalScene(workflow: NormalizedWorkflow, prefix = workfl
       nodeType: node.type,
       typeVersion: node.typeVersion,
       disabled: node.disabled,
+      resource: typeof node.parameters.resource === 'string' ? node.parameters.resource : undefined,
+      operation: typeof node.parameters.operation === 'string' ? node.parameters.operation : undefined,
     },
   }));
   nodes.push(

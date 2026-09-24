@@ -3,7 +3,7 @@ import path from 'node:path';
 
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
-await page.goto('http://127.0.0.1:4173');
+await page.goto(process.env.PREVIEW_URL ?? 'http://127.0.0.1:4173');
 await page.evaluate(() => indexedDB.deleteDatabase('n8n-workflow-visualizer'));
 await page.reload();
 await page.locator('input[type=file]').setInputFiles([

@@ -76,13 +76,20 @@ button { color: inherit; }
 .graph-stage .react-flow__edge-text { fill: #d6d6dc; font-size: 10px; }
 .graph-stage .react-flow__handle { width: 9px; height: 9px; border: 2px solid #17171d; }
 
-.node-card { position: relative; display: flex; align-items: center; width: 100%; height: 100%; padding: 12px 12px; border: 1px solid #464650; border-radius: 9px; background: linear-gradient(145deg, #26262e, #1f1f26); box-shadow: 0 7px 18px rgba(0,0,0,.24); }
-.node-card:hover { border-color: #666674; }
-.node-card.is-disabled { opacity: .48; filter: grayscale(.7); }
-.node-icon { display: grid; flex: 0 0 auto; width: 42px; height: 42px; margin-right: 10px; place-items: center; border-radius: 9px; color: #ff8b78; background: var(--accent-soft); }
-.node-copy strong { max-width: 108px; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.node-copy small { max-width: 108px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.node-badge { position: absolute; top: -9px; right: 7px; padding: 2px 6px; border: 1px solid #64646d; border-radius: 7px; color: #c6c6ce; background: #292930; font-size: 8px; text-transform: uppercase; }
+.canvas-node { --node-accent: #a0a1ad; position: relative; display: flex; align-items: center; width: 100%; height: 100%; flex-direction: column; color: #ececf1; }
+.canvas-node.is-disabled { opacity: .46; filter: grayscale(.72); }
+.node-tile { position: relative; display: grid; flex: 0 0 auto; width: 64px; height: 64px; place-items: center; border: 1px solid #555661; border-radius: 10px; background: linear-gradient(145deg, #2a2a31, #202127); box-shadow: 0 5px 13px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.035); transition: border-color .12s ease, box-shadow .12s ease; }
+.canvas-node:hover .node-tile { border-color: var(--node-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--node-accent) 18%, transparent), 0 6px 15px rgba(0,0,0,.36); }
+.node-tile.shape-rounded { border-radius: 18px; }
+.node-tile.shape-circle { border-radius: 50%; }
+.node-symbol { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 9px; color: var(--node-accent); background: color-mix(in srgb, var(--node-accent) 13%, transparent); }
+.node-tile.shape-circle .node-symbol { border-radius: 50%; }
+.node-symbol svg { width: 27px; height: 27px; }
+.node-copy { align-items: center; width: 100%; padding: 6px 1px 0; text-align: center; }
+.node-copy strong { max-width: 100%; overflow: hidden; font-size: 11px; font-weight: 600; line-height: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.node-copy small { max-width: 100%; margin-top: 1px; overflow: hidden; font-size: 8px; line-height: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.node-badge { position: absolute; z-index: 2; top: -7px; right: -3px; padding: 2px 5px; border: 1px solid #64646d; border-radius: 7px; color: #c6c6ce; background: #292930; font-size: 7px; text-transform: uppercase; }
+.canvas-node .react-flow__handle { width: 8px; height: 8px; border-color: #202127; }
 .sticky-note { width: 100%; height: 100%; padding: 14px 16px; overflow: hidden; border: 1px solid rgba(255,255,255,.12); border-radius: 4px; color: #25221b; box-shadow: 0 5px 14px rgba(0,0,0,.18); font-size: 12px; line-height: 1.45; }
 .sticky-note > :first-child { margin-top: 0; }.sticky-note > :last-child { margin-bottom: 0; }
 .sticky-note pre, .sticky-note code { white-space: pre-wrap; word-break: break-word; }

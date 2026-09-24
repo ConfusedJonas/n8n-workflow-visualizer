@@ -11,11 +11,12 @@ A private-by-default, browser-only visualizer for n8n workflow JSON exports. Imp
 - Resolves imported sub-workflows by exported workflow ID, including legacy strings and current resource-locator values.
 - Represents dynamic, missing, embedded, deprecated local-file/URL, invalid, disabled, and recursive references explicitly.
 - Offers three read-only views:
-  - **Original** — exported n8n positions and all socket types.
+  - **Original** — exported n8n positions, compact type-specific node shapes/icons, and all socket types.
   - **Dependency** — deterministic Dagre layout for the selected workflow family.
   - **Expanded** — nested boundaries with trigger fan-out and conservative result routing.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
+- Routes orthogonal connections around node bodies while retaining every exported output and input index.
 
 All processing is local. The application has no analytics, service worker, external fonts/CDNs, or application network calls. It never opens imported file paths or fetches imported URLs. Production builds include a CSP with `connect-src 'none'`.
 
