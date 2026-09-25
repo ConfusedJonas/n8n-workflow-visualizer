@@ -86,7 +86,7 @@ interface GraphCanvasProps {
 
 const stickyColors = ['#fff0a6', '#a9d7ff', '#b8f2cf', '#ffc8df', '#d7c2ff', '#ffd1a8', '#b8efe9'];
 
-function handleStyle(handle: string, handles: string[]): React.CSSProperties {
+function handleStyle(handle: string, handles: string[], mainOffsets?: number[]): React.CSSProperties {
   const [, type] = handle.split(':');
   if (type !== 'main') {
     const sameSide = handles.filter((candidate) => candidate.split(':')[1] !== 'main');
@@ -95,12 +95,14 @@ function handleStyle(handle: string, handles: string[]): React.CSSProperties {
   }
   const sameSide = handles.filter((candidate) => candidate.split(':')[1] === 'main');
   const index = sameSide.indexOf(handle);
-  return { top: `${((index + 1) / (sameSide.length + 1)) * 100}%`, background: connectionColor(type) };
+  const top = mainOffsets?.[index] ?? ((index + 1) / (sameSide.length + 1)) * 100;
+  return { top: `${top}%`, background: connectionColor(type) };
 }
 
 function Handles({ data }: { data: CanvasNodeData }) {
   const inputs = data.inputHandles ?? [];
   const outputs = data.outputHandles ?? [];
+  const ifOutputOffsets = String(data.nodeType ?? '').toLowerCase().endsWith('.if') ? [30, 70] : undefined;
   return (
     <>
       {inputs.map((id) => {
@@ -115,7 +117,7 @@ function Handles({ data }: { data: CanvasNodeData }) {
       })}
       {outputs.map((id) => {
         const ai = id.split(':')[1] !== 'main';
-        const style = handleStyle(id, outputs);
+        const style = handleStyle(id, outputs, ifOutputOffsets);
         return (
           <span key={id}>
             <Handle id={id} type="source" position={ai ? Position.Bottom : Position.Right} style={style} />

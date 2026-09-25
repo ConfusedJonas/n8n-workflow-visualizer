@@ -113,6 +113,39 @@ test('keeps an aligned four-input Merge connection straight and its icon centere
   expect(geometry.path).not.toContain('C');
 });
 
+test('aligns an IF true output with the exported successor position', async ({ page }) => {
+  const alignedIf = {
+    id: 'aligned-if', name: 'Aligned IF', nodes: [
+      { id: 'if', name: 'Need work?', type: 'n8n-nodes-base.if', position: [0, 0], parameters: {} },
+      { id: 'true', name: 'True branch', type: 'n8n-nodes-base.executeWorkflow', position: [144, -16], parameters: {} },
+      { id: 'false', name: 'False branch', type: 'n8n-nodes-base.executeWorkflow', position: [144, 112], parameters: {} },
+    ],
+    connections: {
+      'Need work?': { main: [
+        [{ node: 'True branch', type: 'main', index: 0 }],
+        [{ node: 'False branch', type: 'main', index: 0 }],
+      ] },
+    },
+  };
+  await page.locator('input[type=file]').setInputFiles({ name: 'aligned-if.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedIf)) });
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(2);
+
+  const truePath = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('.react-flow__node')];
+    const byLabel = (label: string) => nodes.find((node) => node.querySelector('strong')?.textContent === label)!;
+    const ifId = byLabel('Need work?').getAttribute('data-id');
+    const trueId = byLabel('True branch').getAttribute('data-id');
+    const route = [...document.querySelectorAll('[data-route-source]')].find((group) => (
+      group.getAttribute('data-route-source') === ifId && group.getAttribute('data-route-target') === trueId
+    ));
+    return route?.querySelector('.react-flow__edge-path')?.getAttribute('d') ?? '';
+  });
+  expect(truePath).not.toContain('Q');
+  expect(truePath).not.toContain('C');
+});
+
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {
   const externalRequests: string[] = [];
   page.on('request', (request) => {
