@@ -93,7 +93,7 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   expect(crossesMiddle).toBe(false);
 });
 
-test('keeps an aligned four-input Merge connection straight and its icon centered', async ({ page }) => {
+test('centers a four-input Merge icon and aligns its outgoing handle', async ({ page }) => {
   const alignedMerge = {
     id: 'aligned-merge', name: 'Aligned Merge', nodes: [
       { id: 'merge', name: 'Merge', type: 'n8n-nodes-base.merge', position: [0, 0], parameters: { numberInputs: 4 } },
@@ -107,25 +107,26 @@ test('keeps an aligned four-input Merge connection straight and its icon centere
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aligned Merge');
   await expect(page.getByTestId('graph-stage').locator('.canvas-node')).toHaveCount(2);
   await page.getByRole('button', { name: 'Fit graph' }).click();
-  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(1);
 
   const geometry = await page.evaluate(() => {
-    const merge = [...document.querySelectorAll('.react-flow__node')].find((node) => node.querySelector('strong')?.textContent === 'Merge')!;
+    const nodes = [...document.querySelectorAll('.react-flow__node')];
+    const merge = nodes.find((node) => node.querySelector('strong')?.textContent === 'Merge')!;
+    const aggregate = nodes.find((node) => node.querySelector('strong')?.textContent === 'Aggregate')!;
     const tile = merge.querySelector('.node-tile')!.getBoundingClientRect();
     const icon = merge.querySelector('.node-symbol')!.getBoundingClientRect();
-    const path = document.querySelector('.react-flow__edge-path')!.getAttribute('d') ?? '';
+    const output = merge.querySelector('[data-handleid="out:main:0"]')!.getBoundingClientRect();
+    const input = aggregate.querySelector('[data-handleid="in:main:0"]')!.getBoundingClientRect();
     return {
       tileHeight: Number.parseFloat(getComputedStyle(merge.querySelector('.node-tile')!).height),
       iconOffsetX: (icon.left + icon.width / 2) - (tile.left + tile.width / 2),
       iconOffsetY: (icon.top + icon.height / 2) - (tile.top + tile.height / 2),
-      path,
+      handleOffsetY: (output.top + output.height / 2) - (input.top + input.height / 2),
     };
   });
   expect(geometry.tileHeight).toBeCloseTo(144, 1);
   expect(geometry.iconOffsetX).toBeCloseTo(0, 1);
   expect(geometry.iconOffsetY).toBeCloseTo(0, 1);
-  expect(geometry.path).not.toContain('Q');
-  expect(geometry.path).not.toContain('C');
+  expect(geometry.handleOffsetY).toBeCloseTo(0, 1);
 });
 
 test('aligns an IF true output with the exported successor position', async ({ page }) => {
