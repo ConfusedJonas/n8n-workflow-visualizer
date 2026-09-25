@@ -104,6 +104,9 @@ test('keeps an aligned four-input Merge connection straight and its icon centere
   await page.locator('input[type=file]').setInputFiles({ name: 'aligned-merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedMerge)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aligned Merge');
+  await expect(page.getByTestId('graph-stage').locator('.canvas-node')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Fit graph' }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(1);
 
   const geometry = await page.evaluate(() => {
@@ -142,6 +145,9 @@ test('aligns an IF true output with the exported successor position', async ({ p
   await page.locator('input[type=file]').setInputFiles({ name: 'aligned-if.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedIf)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aligned IF');
+  await expect(page.getByTestId('graph-stage').locator('.canvas-node')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Fit graph' }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(2);
 
   const truePath = await page.evaluate(() => {
