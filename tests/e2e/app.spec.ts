@@ -23,6 +23,7 @@ test('imports peers independently, resolves a later child, switches views, colla
     return { footprintWidth: footprint.width, footprintHeight: footprint.height, tileWidth: tile.width, tileHeight: tile.height };
   });
   expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '80px', tileWidth: '100px', tileHeight: '80px' });
+  await expect(page.getByTestId('graph-stage').locator('svg[aria-label="HTTP Request"]')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
   await page.getByRole('button', { name: 'Dependency' }).click();
@@ -37,6 +38,17 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(2);
   await page.getByRole('button', { name: 'Collapse all' }).click();
   await expect(page.getByTestId('graph-stage').locator('.status-collapsed')).toHaveCount(1);
+  const collapsedGeometry = await page.getByTestId('graph-stage').locator('.status-collapsed').evaluate((node) => {
+    const tile = node.querySelector('.node-tile')!;
+    return {
+      nodeWidth: getComputedStyle(node).width,
+      nodeHeight: getComputedStyle(node).height,
+      tileWidth: getComputedStyle(tile).width,
+      tileHeight: getComputedStyle(tile).height,
+      label: node.querySelector('strong')?.textContent,
+    };
+  });
+  expect(collapsedGeometry).toEqual({ nodeWidth: '100px', nodeHeight: '80px', tileWidth: '100px', tileHeight: '80px', label: 'Generate draft' });
 
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');

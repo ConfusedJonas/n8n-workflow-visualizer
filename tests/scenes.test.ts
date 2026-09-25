@@ -80,10 +80,13 @@ describe('scene builders', () => {
     expect(disabledScene.nodes.find((item) => item.id.endsWith('/node:call'))?.kind).toBe('workflow');
 
     const missing = buildExpandedScene(createWorkspace([parse(mainWorkflow('missing'))]), 'workflow:main');
-    expect(missing.nodes.find((item) => item.id.endsWith('/node:call'))?.data.status).toBe('missing');
+    expect(missing.nodes.find((item) => item.id.endsWith('/node:call'))).toMatchObject({
+      kind: 'placeholder', width: 100, height: 80,
+      data: { label: 'Run Child', nodeType: 'n8n-nodes-base.executeWorkflow', status: 'missing' },
+    });
 
     const collapsed = buildExpandedScene(createWorkspace([parse(mainWorkflow()), parse(childWorkflow())]), 'workflow:main', { collapseAll: true });
-    expect(collapsed.nodes.find((item) => item.data.status === 'collapsed')).toBeDefined();
+    expect(collapsed.nodes.find((item) => item.data.status === 'collapsed')).toMatchObject({ width: 100, height: 80, data: { label: 'Run Child' } });
 
     const a = { ...mainWorkflow('b'), id: 'a', name: 'A' };
     const b = { ...mainWorkflow('a'), id: 'b', name: 'B' };

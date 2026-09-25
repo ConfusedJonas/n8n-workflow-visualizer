@@ -23,7 +23,7 @@ function prefixForPath(path: string): string {
 
 function placeholderData(reference: SubworkflowReference, status: string = reference.resolution) {
   return {
-    label: reference.targetLabel ?? reference.targetWorkflowId ?? reference.nodeName,
+    targetLabel: reference.targetLabel ?? reference.targetWorkflowId ?? reference.nodeName,
     status,
     targetId: reference.targetWorkflowId,
   };
@@ -33,9 +33,10 @@ function replaceWithPlaceholder(scene: GraphScene, nodeId: string, data: Record<
   const node = scene.nodes.find((item) => item.id === nodeId);
   if (!node) return nodeId;
   node.kind = 'placeholder';
-  node.width = 250;
-  node.height = 92;
-  node.data = data;
+  // A collapsed or unresolved call retains the exact geometry and appearance
+  // of its Execute Workflow node. Status is presentation metadata, not a new
+  // graph shape that should disturb exported coordinates or edge alignment.
+  node.data = { ...node.data, ...data };
   return node.id;
 }
 
@@ -145,7 +146,7 @@ function buildFragment(
     if (options.collapseAll || options.collapsedPaths?.has(instancePath)) {
       const target = workspace.workflows[targetKey];
       replaceWithPlaceholder(scene, callId, {
-        label: target.name,
+        targetLabel: target.name,
         status: 'collapsed',
         nodeCount: target.nodes.length,
         instancePath,

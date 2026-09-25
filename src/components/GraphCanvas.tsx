@@ -130,7 +130,7 @@ function Handles({ data }: { data: CanvasNodeData }) {
 }
 
 type NodeShape = 'square' | 'circle';
-type CoreGlyph = 'aggregate' | 'execute' | 'if' | 'manual' | 'merge';
+type CoreGlyph = 'aggregate' | 'execute' | 'http' | 'if' | 'manual' | 'merge';
 
 interface NodeAppearance {
   color: string;
@@ -167,7 +167,7 @@ function appearanceFor(type = ''): NodeAppearance {
   if (normalized.includes('trigger') || normalized.includes('webhook')) return { lucide: normalized.includes('webhook') ? Globe2 : MousePointer2, color: '#f3f3f5', shape: 'square' };
   if (normalized.includes('executeworkflow')) return { core: 'execute', color: '#ff6d00', shape: 'square' };
   if (normalized.includes('workflow')) return { lucide: Workflow, color: '#ff6d00', shape: 'square' };
-  if (normalized.includes('http')) return { lucide: Globe2, color: '#4aa7f5', shape: 'square' };
+  if (normalized.includes('http')) return { core: 'http', color: '#4aa7f5', shape: 'square' };
   if (normalized.includes('code') || normalized.includes('function')) return { lucide: Code2, color: '#ffb454', shape: 'square' };
   if (normalized.endsWith('.if')) return { core: 'if', color: '#00c875', shape: 'square' };
   if (normalized.includes('switch')) return { lucide: Split, color: '#00c875', shape: 'square' };
@@ -207,6 +207,15 @@ function CoreIcon({ glyph }: { glyph: CoreGlyph }) {
       </svg>
     );
   }
+  if (glyph === 'http') {
+    return (
+      <svg viewBox="0 0 48 48" aria-label="HTTP Request" role="img">
+        <circle cx="24" cy="24" r="17" fill="none" stroke="currentColor" strokeWidth="3" />
+        <ellipse cx="24" cy="24" rx="7.5" ry="17" fill="none" stroke="currentColor" strokeWidth="3" />
+        <path d="M7 24h34" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+      </svg>
+    );
+  }
   if (glyph === 'if') {
     return (
       <svg viewBox="0 0 48 48" aria-hidden="true">
@@ -230,14 +239,13 @@ function CoreIcon({ glyph }: { glyph: CoreGlyph }) {
 
 function WorkflowNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
-  const Icon = appearance.lucide ?? CircleHelp;
   const style = { '--node-accent': appearance.color } as React.CSSProperties;
   return (
     <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''}`} style={style}>
       <div className={`node-tile shape-${appearance.shape}`}>
         <Handles data={data} />
         <span className="node-symbol">
-          {appearance.brand ? <BrandIcon icon={appearance.brand} /> : appearance.core ? <CoreIcon glyph={appearance.core} /> : <Icon size={40} strokeWidth={1.7} />}
+          <AppearanceGlyph appearance={appearance} />
         </span>
       </div>
       <span className="node-copy" title={String(data.label ?? 'Unnamed node')}>
@@ -247,6 +255,15 @@ function WorkflowNode({ data }: NodeProps<CanvasNode>) {
       {data.disabled ? <span className="node-badge">Disabled</span> : null}
     </div>
   );
+}
+
+function AppearanceGlyph({ appearance }: { appearance: NodeAppearance }) {
+  const Icon = appearance.lucide ?? CircleHelp;
+  return appearance.brand
+    ? <BrandIcon icon={appearance.brand} />
+    : appearance.core
+      ? <CoreIcon glyph={appearance.core} />
+      : <Icon size={40} strokeWidth={1.7} />;
 }
 
 function safeHref(href?: string): string | undefined {
@@ -277,13 +294,32 @@ function StickyNode({ data }: NodeProps<CanvasNode>) {
 }
 
 function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
+  if (!data.nodeType) {
+    return (
+      <div className={`placeholder-card status-${String(data.status ?? 'unknown')}`}>
+        <Handles data={data} />
+        <CircleHelp size={20} />
+        <span><strong>{String(data.label ?? 'Unresolved workflow')}</strong><small>{String(data.status ?? 'unknown')}</small></span>
+      </div>
+    );
+  }
+  const appearance = appearanceFor(data.nodeType);
   const expandable = data.status === 'collapsed' && typeof data.instancePath === 'string';
+  const status = String(data.status ?? 'unknown');
+  const style = { '--node-accent': appearance.color } as React.CSSProperties;
   return (
-    <div className={`placeholder-card status-${String(data.status ?? 'unknown')}`}>
-      <Handles data={data} />
-      <CircleHelp size={20} />
-      <span><strong>{String(data.label ?? 'Unresolved workflow')}</strong><small>{String(data.status ?? 'unknown')}</small></span>
-      {expandable ? <button type="button" onClick={() => data.onToggle?.(String(data.instancePath))}>Expand</button> : null}
+    <div className={`canvas-node placeholder-node status-${status}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
+      <div className={`node-tile shape-${appearance.shape}`}>
+        <Handles data={data} />
+        <span className="node-symbol"><AppearanceGlyph appearance={appearance} /></span>
+      </div>
+      <span className="node-copy">
+        <strong>{String(data.label ?? 'Unresolved workflow')}</strong>
+        {data.detail ? <small>{String(data.detail)}</small> : null}
+      </span>
+      {expandable ? (
+        <button className="node-badge is-action" type="button" onClick={() => data.onToggle?.(String(data.instancePath))}>Expand</button>
+      ) : <span className="node-badge">{status}</span>}
     </div>
   );
 }
