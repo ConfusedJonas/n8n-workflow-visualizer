@@ -6,8 +6,6 @@ const example = (name: string) => path.resolve(process.cwd(), 'examples', name);
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
-  await page.evaluate(() => indexedDB.deleteDatabase('n8n-workflow-visualizer'));
-  await page.reload();
 });
 
 test('imports peers independently, resolves a later child, switches views, collapses, and restores', async ({ page }) => {
@@ -24,7 +22,7 @@ test('imports peers independently, resolves a later child, switches views, colla
     const footprint = getComputedStyle(node);
     return { footprintWidth: footprint.width, footprintHeight: footprint.height, tileWidth: tile.width, tileHeight: tile.height };
   });
-  expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '100px', tileWidth: '64px', tileHeight: '64px' });
+  expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '100px', tileWidth: '100px', tileHeight: '100px' });
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
   await page.getByRole('button', { name: 'Dependency' }).click();
@@ -43,6 +41,44 @@ test('imports peers independently, resolves a later child, switches views, colla
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
   await expect(page.getByRole('button', { name: 'Expanded' })).toHaveClass(/is-active/);
+});
+
+test('routes a backward loop around the node between its endpoints', async ({ page }) => {
+  const loop = {
+    id: 'routing-loop', name: 'Routing loop', nodes: [
+      { id: 'a', name: 'First', type: 'n8n-nodes-base.code', position: [0, 0], parameters: {} },
+      { id: 'b', name: 'Middle', type: 'n8n-nodes-base.code', position: [160, 0], parameters: {} },
+      { id: 'c', name: 'Last', type: 'n8n-nodes-base.code', position: [320, 0], parameters: {} },
+    ],
+    connections: {
+      First: { main: [[{ node: 'Middle', type: 'main', index: 0 }]] },
+      Middle: { main: [[{ node: 'Last', type: 'main', index: 0 }]] },
+      Last: { main: [[{ node: 'First', type: 'main', index: 0 }]] },
+    },
+  };
+  await page.locator('input[type=file]').setInputFiles({ name: 'routing-loop.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(loop)) });
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
+
+  const crossesMiddle = await page.evaluate(() => {
+    const nodes = [...document.querySelectorAll('.react-flow__node')];
+    const byLabel = (label: string) => nodes.find((node) => node.querySelector('strong')?.textContent === label)!;
+    const firstId = byLabel('First').getAttribute('data-id');
+    const lastId = byLabel('Last').getAttribute('data-id');
+    const middleRect = byLabel('Middle').querySelector('.node-tile')!.getBoundingClientRect();
+    const route = [...document.querySelectorAll('[data-route-source]')].find((group) => group.getAttribute('data-route-source') === lastId && group.getAttribute('data-route-target') === firstId)!;
+    const path = route.querySelector('.react-flow__edge-path') as SVGPathElement;
+    const matrix = path.getScreenCTM()!;
+    const length = path.getTotalLength();
+    for (let step = 1; step < 100; step += 1) {
+      const point = path.getPointAtLength((length * step) / 100);
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+      if (screen.x > middleRect.left && screen.x < middleRect.right && screen.y > middleRect.top && screen.y < middleRect.bottom) return true;
+    }
+    return false;
+  });
+  expect(crossesMiddle).toBe(false);
 });
 
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {

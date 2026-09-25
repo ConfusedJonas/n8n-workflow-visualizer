@@ -19,6 +19,20 @@ describe('scene builders', () => {
     expect(scene.edges[0]).toMatchObject({ sourceHandle: 'out:future:1', targetHandle: 'in:futureTarget:4' });
   });
 
+  it('expands multi-input node geometry without changing exported coordinates', () => {
+    const merge = node('Merge', 'merge', [320, 40], 'n8n-nodes-base.merge', { numberInputs: 4 });
+    const raw = workflow('multi-input', 'Multi input', [
+      node('One', 'one', [0, 0]), node('Two', 'two', [0, 120]), node('Three', 'three', [0, 240]), node('Four', 'four', [0, 360]), merge,
+    ], {
+      One: { main: [[{ node: 'Merge', type: 'main', index: 0 }]] },
+      Two: { main: [[{ node: 'Merge', type: 'main', index: 1 }]] },
+      Three: { main: [[{ node: 'Merge', type: 'main', index: 2 }]] },
+      Four: { main: [[{ node: 'Merge', type: 'main', index: 3 }]] },
+    });
+    const mergeNode = buildOriginalScene(parse(raw)).nodes.find((item) => item.id.endsWith('node:merge'));
+    expect(mergeNode).toMatchObject({ x: 320, y: 40, width: 100, height: 220, data: { inputCount: 4 } });
+  });
+
   it('deduplicates dependency edges with counts and lays out deterministically', () => {
     const main = mainWorkflow();
     (main.nodes as Record<string, unknown>[]).push(node('Run Child Again', 'call2', [280, 160], 'n8n-nodes-base.executeWorkflow', { workflowId: 'child' }));
