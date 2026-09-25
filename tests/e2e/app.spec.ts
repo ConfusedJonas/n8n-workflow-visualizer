@@ -22,7 +22,7 @@ test('imports peers independently, resolves a later child, switches views, colla
     const footprint = getComputedStyle(node);
     return { footprintWidth: footprint.width, footprintHeight: footprint.height, tileWidth: tile.width, tileHeight: tile.height };
   });
-  expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '100px', tileWidth: '100px', tileHeight: '100px' });
+  expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '80px', tileWidth: '100px', tileHeight: '80px' });
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
   await page.getByRole('button', { name: 'Dependency' }).click();
@@ -79,6 +79,38 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
     return false;
   });
   expect(crossesMiddle).toBe(false);
+});
+
+test('keeps an aligned four-input Merge connection straight and its icon centered', async ({ page }) => {
+  const alignedMerge = {
+    id: 'aligned-merge', name: 'Aligned Merge', nodes: [
+      { id: 'merge', name: 'Merge', type: 'n8n-nodes-base.merge', position: [0, 0], parameters: { numberInputs: 4 } },
+      { id: 'next', name: 'Aggregate', type: 'n8n-nodes-base.aggregate', position: [144, 32], parameters: {} },
+    ],
+    connections: { Merge: { main: [[{ node: 'Aggregate', type: 'main', index: 0 }]] } },
+  };
+  await page.locator('input[type=file]').setInputFiles({ name: 'aligned-merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedMerge)) });
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByRole('button', { name: 'Original' }).click();
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(1);
+
+  const geometry = await page.evaluate(() => {
+    const merge = [...document.querySelectorAll('.react-flow__node')].find((node) => node.querySelector('strong')?.textContent === 'Merge')!;
+    const tile = merge.querySelector('.node-tile')!.getBoundingClientRect();
+    const icon = merge.querySelector('.node-symbol')!.getBoundingClientRect();
+    const path = document.querySelector('.react-flow__edge-path')!.getAttribute('d') ?? '';
+    return {
+      tileHeight: Number.parseFloat(getComputedStyle(merge.querySelector('.node-tile')!).height),
+      iconOffsetX: (icon.left + icon.width / 2) - (tile.left + tile.width / 2),
+      iconOffsetY: (icon.top + icon.height / 2) - (tile.top + tile.height / 2),
+      path,
+    };
+  });
+  expect(geometry.tileHeight).toBeCloseTo(144, 1);
+  expect(geometry.iconOffsetX).toBeCloseTo(0, 1);
+  expect(geometry.iconOffsetY).toBeCloseTo(0, 1);
+  expect(geometry.path).not.toContain('Q');
+  expect(geometry.path).not.toContain('C');
 });
 
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {

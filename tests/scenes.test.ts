@@ -15,7 +15,7 @@ describe('scene builders', () => {
       A: { future: [null, [{ node: 'B', type: 'futureTarget', index: 4 }]] },
     });
     const scene = buildOriginalScene(parse(raw));
-    expect(scene.nodes.find((item) => item.id.endsWith('node:a'))).toMatchObject({ x: -100, y: 25, width: 100, height: 100 });
+    expect(scene.nodes.find((item) => item.id.endsWith('node:a'))).toMatchObject({ x: -100, y: 25, width: 100, height: 80 });
     expect(scene.edges[0]).toMatchObject({ sourceHandle: 'out:future:1', targetHandle: 'in:futureTarget:4' });
   });
 
@@ -30,7 +30,7 @@ describe('scene builders', () => {
       Four: { main: [[{ node: 'Merge', type: 'main', index: 3 }]] },
     });
     const mergeNode = buildOriginalScene(parse(raw)).nodes.find((item) => item.id.endsWith('node:merge'));
-    expect(mergeNode).toMatchObject({ x: 320, y: 40, width: 100, height: 220, data: { inputCount: 4 } });
+    expect(mergeNode).toMatchObject({ x: 320, y: 40, width: 100, height: 144, data: { inputCount: 4 } });
   });
 
   it('deduplicates dependency edges with counts and lays out deterministically', () => {

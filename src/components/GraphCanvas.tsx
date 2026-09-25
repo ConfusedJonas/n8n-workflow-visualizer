@@ -415,6 +415,12 @@ function routeHits(points: RoutePoint[], obstacles: RouteRect[]): boolean {
 
 function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteRect[]): RoutePoint[] {
   const gap = target.x - source.x;
+  // Do not introduce a midpoint bend when exported geometry already aligns
+  // the two handles. This is the common n8n Merge -> next-node shape.
+  if (gap >= 0 && Math.abs(source.y - target.y) < 0.5) {
+    const direct = [source, target];
+    if (!routeHits(direct, obstacles)) return direct;
+  }
   if (gap >= 0) {
     const centerX = source.x + (gap / 2);
     const direct = [source, { x: centerX, y: source.y }, { x: centerX, y: target.y }, target];

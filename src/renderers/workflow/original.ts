@@ -6,7 +6,7 @@ import { edgeStyle, makeHandle } from '../scene';
 // separate from the inner tile preserves the exported coordinates and leaves
 // room for the label without making neighbouring nodes collide.
 export const DEFAULT_NODE_WIDTH = 100;
-export const DEFAULT_NODE_HEIGHT = 100;
+export const DEFAULT_NODE_HEIGHT = 80;
 
 function connectedSlotCount(workflow: NormalizedWorkflow, nodeId: string, direction: 'input' | 'output'): number {
   const indices = workflow.edges
@@ -40,7 +40,11 @@ export function buildOriginalScene(workflow: NormalizedWorkflow, prefix = workfl
     const inputCount = Math.max(connectedSlotCount(workflow, node.id, 'input'), declaredInputs);
     const outputCount = Math.max(connectedSlotCount(workflow, node.id, 'output'), normalizedType.endsWith('.if') ? 2 : 0);
     const visibleSlotCount = Math.max(inputCount, outputCount);
-    const height = visibleSlotCount > 2 ? DEFAULT_NODE_HEIGHT + ((visibleSlotCount - 1) * 40) : DEFAULT_NODE_HEIGHT;
+    // n8n keeps ordinary nodes wider than they are tall. Multi-slot nodes add
+    // one 32 px row for each slot beyond the two that fit in the base tile.
+    // Four-input Merge nodes therefore become 144 px tall, which also keeps
+    // their centre aligned with downstream nodes placed 32 px lower.
+    const height = visibleSlotCount > 2 ? DEFAULT_NODE_HEIGHT + ((visibleSlotCount - 2) * 32) : DEFAULT_NODE_HEIGHT;
     return {
       id: nodeId(node.id),
       kind: 'workflow',
