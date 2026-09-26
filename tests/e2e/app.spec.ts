@@ -24,7 +24,7 @@ test('imports peers independently, resolves a later child, switches views, colla
   });
   expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '80px', tileWidth: '100px', tileHeight: '80px' });
   await expect(page.getByTestId('graph-stage').locator('svg[aria-label="HTTP Request"]')).toHaveCount(1);
-  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge')).toHaveCount(3);
 
   await page.getByText('Highlight missing').click();
   await expect(page.getByTestId('graph-stage')).toHaveClass(/highlight-missing/);
