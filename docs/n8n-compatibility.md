@@ -37,7 +37,7 @@ The local smoke exports additionally verified a parent with 29 executable nodes 
 
 The visualizer resolves only static database IDs already imported into the browser and caller-scoped literal embedded workflows. It does not execute expressions, inspect credentials, contact an n8n instance, read local workflow paths, or fetch workflow URLs.
 
-For a child with one enabled input trigger, all trigger branches are rewired to a boundary input port. A child with one statically identifiable main terminal uses that terminal as its result. Multiple possible terminals use a labelled runtime-result port because the actual n8n return value depends on the runtime's last executed node; the visualizer does not invent execution edges to all terminals.
+For a child with one enabled input trigger, the trigger is hidden and all of its branch targets are marked as possible starts. Main terminals are marked as possible ends. Outside edges terminate on the child boundary rather than crossing into internal nodes; invisible graph-only links retain traversal continuity for simulation without implying which runtime terminal n8n will return.
 
 ## Forward-compatibility policy
 

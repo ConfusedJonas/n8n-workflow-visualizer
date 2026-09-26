@@ -1,13 +1,12 @@
 import { isWorkflowInputTrigger } from '../../n8n/parser';
 import type { NormalizedWorkflow, SubworkflowReference, Workspace } from '../../n8n/types';
-import type { GraphScene, SceneEdge, SceneNode } from '../scene';
-import { edgeStyle, makeHandle, sceneBounds } from '../scene';
+import type { GraphScene, SceneNode } from '../scene';
+import { sceneBounds } from '../scene';
 import { DEFAULT_NODE_HEIGHT, DEFAULT_NODE_WIDTH, buildOriginalScene } from '../workflow/original';
 import { shiftForExpansion } from './layout';
 
 interface Fragment extends GraphScene {
-  entryId?: string;
-  exitId?: string;
+  entryIds: string[];
   terminalIds: string[];
   ambiguousEntry: boolean;
   ambiguousExit: boolean;
@@ -49,68 +48,51 @@ function translateScene(scene: GraphScene, x: number, y: number): GraphScene {
 }
 
 function terminalIds(scene: GraphScene): string[] {
-  const candidates = scene.nodes.filter((node) => ['workflow', 'placeholder'].includes(node.kind));
-  const sources = new Set(scene.edges.filter((edge) => edge.connectionType === 'main').map((edge) => edge.source));
+  const mainEdges = scene.edges.filter((edge) => edge.connectionType === 'main');
+  const mainParticipants = new Set(mainEdges.flatMap((edge) => [edge.source, edge.target]));
+  const connected = new Set(scene.edges.flatMap((edge) => [edge.source, edge.target]));
+  const candidates = scene.nodes.filter((node) => ['workflow', 'placeholder'].includes(node.kind)
+    && (mainParticipants.has(node.id) || !connected.has(node.id)));
+  const sources = new Set(mainEdges.map((edge) => edge.source));
   return candidates.filter((node) => !sources.has(node.id)).map((node) => node.id);
 }
 
 function hideInputTrigger(fragment: Fragment, workflow: NormalizedWorkflow, prefix: string): Fragment {
   const triggers = workflow.nodes.filter((node) => isWorkflowInputTrigger(node) && !node.disabled);
   if (triggers.length !== 1) {
-    const bounds = sceneBounds(fragment.nodes);
-    const portId = `${prefix}/entry:ambiguous`;
-    fragment.nodes.push({
-      id: portId,
-      kind: 'port',
-      x: bounds.x - 32,
-      y: bounds.y + bounds.height / 2 - 18,
-      width: 36,
-      height: 36,
-      data: { label: triggers.length ? 'Multiple input triggers' : 'Input trigger unavailable', status: 'warning' },
-    });
-    return { ...fragment, entryId: portId, ambiguousEntry: true };
+    const mainEdges = fragment.edges.filter((edge) => edge.connectionType === 'main');
+    const incoming = new Set(mainEdges.map((edge) => edge.target));
+    const mainParticipants = new Set(mainEdges.flatMap((edge) => [edge.source, edge.target]));
+    const connected = new Set(fragment.edges.flatMap((edge) => [edge.source, edge.target]));
+    const entryIds = fragment.nodes
+      .filter((node) => ['workflow', 'placeholder'].includes(node.kind)
+        && !incoming.has(node.id)
+        && (mainParticipants.has(node.id) || !connected.has(node.id)))
+      .map((node) => node.id);
+    fragment.nodes = fragment.nodes.map((node) => entryIds.includes(node.id)
+      ? { ...node, data: { ...node.data, boundaryEntry: true } }
+      : node);
+    return { ...fragment, entryIds, ambiguousEntry: true };
   }
 
   const triggerId = `${prefix}/node:${triggers[0].id}`;
-  const triggerScene = fragment.nodes.find((node) => node.id === triggerId);
-  if (!triggerScene) return fragment;
-  const entryId = `${prefix}/entry`;
+  if (!fragment.nodes.some((node) => node.id === triggerId)) return fragment;
   fragment.nodes = fragment.nodes.filter((node) => node.id !== triggerId);
   const outgoing = fragment.edges.filter((edge) => edge.source === triggerId);
   fragment.edges = fragment.edges.filter((edge) => edge.source !== triggerId && edge.target !== triggerId);
-  fragment.nodes.push({
-    id: entryId,
-    kind: 'port',
-    x: triggerScene.x,
-    y: triggerScene.y + triggerScene.height / 2 - 14,
-    width: 28,
-    height: 28,
-    data: { label: 'Workflow input', status: 'entry', boundaryRole: 'entry' },
-  });
-  outgoing.forEach((edge, index) => {
-    fragment.edges.push({ ...edge, id: `${entryId}:edge:${index}`, source: entryId, sourceHandle: 'out:main:0' });
-  });
-  return { ...fragment, entryId, ambiguousEntry: false };
+  const entryIds = [...new Set(outgoing.map((edge) => edge.target))];
+  fragment.nodes = fragment.nodes.map((node) => entryIds.includes(node.id)
+    ? { ...node, data: { ...node.data, boundaryEntry: true } }
+    : node);
+  return { ...fragment, entryIds, ambiguousEntry: false };
 }
 
-function addExit(fragment: Fragment, prefix: string): Fragment {
+function addExit(fragment: Fragment): Fragment {
   const terminals = terminalIds(fragment);
   fragment.nodes = fragment.nodes.map((node) => terminals.includes(node.id)
-    ? { ...node, data: { ...node.data, boundaryRole: 'exit' } }
+    ? { ...node, data: { ...node.data, boundaryExit: true } }
     : node);
-  if (terminals.length === 1) return { ...fragment, exitId: terminals[0], terminalIds: terminals, ambiguousExit: false };
-  const bounds = sceneBounds(fragment.nodes);
-  const exitId = `${prefix}/result`;
-  fragment.nodes.push({
-    id: exitId,
-    kind: 'port',
-    x: bounds.x + bounds.width + 18,
-    y: bounds.y + bounds.height / 2 - 18,
-    width: 36,
-    height: 36,
-    data: { label: 'Possible result', status: 'exit', boundaryRole: 'exit' },
-  });
-  return { ...fragment, exitId, terminalIds: terminals, ambiguousExit: true };
+  return { ...fragment, terminalIds: terminals, ambiguousExit: terminals.length !== 1 };
 }
 
 function buildFragment(
@@ -123,7 +105,7 @@ function buildFragment(
   depth: number,
 ): Fragment {
   const workflow = workspace.workflows[workflowKey];
-  if (!workflow) return { nodes: [], edges: [], terminalIds: [], ambiguousEntry: true, ambiguousExit: true };
+  if (!workflow) return { nodes: [], edges: [], entryIds: [], terminalIds: [], ambiguousEntry: true, ambiguousExit: true };
   const prefix = prefixForPath(path);
   let scene = buildOriginalScene(workflow, prefix);
   const references = [...workflow.subworkflowReferences].sort((a, b) => {
@@ -162,9 +144,9 @@ function buildFragment(
     childAncestors.add(targetKey);
     let child = buildFragment(workspace, targetKey, instancePath, childAncestors, options, true, depth + 1);
     const childBounds = sceneBounds(child.nodes);
-    const contentWidth = childBounds.width + 160;
-    const contentHeight = childBounds.height + 140;
-    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight, 160);
+    const contentWidth = childBounds.width + 220;
+    const contentHeight = childBounds.height + 180;
+    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight, 220);
     scene.nodes = shifted.nodes;
     const currentCall = scene.nodes.find((node) => node.id === callId)!;
     const boundaryX = currentCall.x;
@@ -184,61 +166,53 @@ function buildFragment(
         depth: depth + 1,
         instancePath,
         nodeCount: workspace.workflows[targetKey].nodes.length,
+        inputAnchor: ((currentCall.y + currentCall.height / 2 - boundaryY) / contentHeight) * 100,
+        outputAnchor: ((currentCall.y + currentCall.height / 2 - boundaryY) / contentHeight) * 100,
+        entryWarning: child.ambiguousEntry
+          ? 'Input trigger is missing, disabled, or ambiguous; possible starts are highlighted.'
+          : undefined,
       },
     };
     child = {
       ...child,
-      ...translateScene(child, boundaryX + 80 - childBounds.x, boundaryY + 76 - childBounds.y),
+      ...translateScene(child, boundaryX + 110 - childBounds.x, boundaryY + 96 - childBounds.y),
     };
-    const entryId = child.entryId ?? child.nodes.find((node) => node.kind !== 'boundary')?.id;
-    const exitId = child.exitId ?? entryId;
-    const entryNode = child.nodes.find((node) => node.id === entryId);
-    const exitNode = child.nodes.find((node) => node.id === exitId);
-    const entryPortId = `${boundaryId}/input`;
-    const exitPortId = `${boundaryId}/output`;
-    const clampY = (value: number) => Math.max(boundaryY + 52, Math.min(boundaryY + contentHeight - 32, value));
-    const entryY = clampY((entryNode?.y ?? boundaryY + contentHeight / 2) + (entryNode?.height ?? 20) / 2) - 10;
-    const exitY = clampY((exitNode?.y ?? boundaryY + contentHeight / 2) + (exitNode?.height ?? 20) / 2) - 10;
-    const boundaryPorts: SceneNode[] = [
-      {
-        id: entryPortId,
-        kind: 'port',
-        x: boundaryX - 10,
-        y: entryY,
-        width: 20,
-        height: 20,
-        zIndex: 3,
-        data: { label: 'Input', status: 'boundary-entry', boundaryRole: 'entry' },
-      },
-      {
-        id: exitPortId,
-        kind: 'port',
-        x: boundaryX + contentWidth - 10,
-        y: exitY,
-        width: 20,
-        height: 20,
-        zIndex: 3,
-        data: { label: child.ambiguousExit ? 'Possible result' : 'Output', status: 'boundary-exit', boundaryRole: 'exit' },
-      },
-    ];
-    scene.nodes.push(boundary, ...child.nodes, ...boundaryPorts);
+    scene.nodes.push(boundary, ...child.nodes);
     scene.edges.push(...child.edges);
+    const incoming = scene.edges.filter((edge) => edge.target === callId);
+    const outgoing = scene.edges.filter((edge) => edge.source === callId);
     scene.edges = scene.edges.map((edge) => {
       if (edge.target === callId) {
-        return { ...edge, target: entryPortId, targetHandle: 'in:main:0' };
+        return { ...edge, target: boundaryId, targetHandle: edge.targetHandle ?? 'in:main:0' };
       }
       if (edge.source === callId) {
-        return { ...edge, source: exitPortId, sourceHandle: 'out:main:0', label: child.ambiguousExit ? 'runtime result' : edge.label };
+        return { ...edge, source: boundaryId, sourceHandle: edge.sourceHandle ?? 'out:main:0', label: child.ambiguousExit ? 'runtime result' : edge.label };
       }
       return edge;
     });
-    if (entryId) scene.edges.push(makeSyntheticEdge(`${entryPortId}:inside`, entryPortId, entryId));
-    if (exitId) scene.edges.push(makeSyntheticEdge(`${exitPortId}:inside`, exitId, exitPortId));
+    incoming.forEach((edge) => child.entryIds.forEach((entryId, index) => {
+      scene.edges.push({
+        ...edge,
+        id: `${edge.id}:logical-entry:${index}`,
+        target: entryId,
+        targetHandle: 'in:main:0',
+        hidden: true,
+      });
+    }));
+    outgoing.forEach((edge) => child.terminalIds.forEach((terminalId, index) => {
+      scene.edges.push({
+        ...edge,
+        id: `${edge.id}:logical-exit:${index}`,
+        source: terminalId,
+        sourceHandle: 'out:main:0',
+        hidden: true,
+      });
+    }));
   }
 
-  let fragment: Fragment = { ...scene, terminalIds: [], ambiguousEntry: false, ambiguousExit: false };
+  let fragment: Fragment = { ...scene, entryIds: [], terminalIds: [], ambiguousEntry: false, ambiguousExit: false };
   if (hideTrigger) fragment = hideInputTrigger(fragment, workflow, prefix);
-  if (hideTrigger) fragment = addExit(fragment, prefix);
+  if (hideTrigger) fragment = addExit(fragment);
   return fragment;
 }
 
@@ -250,25 +224,6 @@ export function buildExpandedScene(
   const ancestors = new Set([workflowKey]);
   const fragment = buildFragment(workspace, workflowKey, workflowKey, ancestors, options, false, 0);
   return { nodes: fragment.nodes, edges: fragment.edges };
-}
-
-export function makeSyntheticEdge(
-  id: string,
-  source: string,
-  target: string,
-  type = 'main',
-): SceneEdge {
-  return {
-    id,
-    source,
-    target,
-    sourceHandle: makeHandle('out', type, 0),
-    targetHandle: makeHandle('in', type, 0),
-    connectionType: type,
-    outputIndex: 0,
-    inputIndex: 0,
-    style: edgeStyle(type),
-  };
 }
 
 export const EXPANDED_NODE_SIZE = { width: DEFAULT_NODE_WIDTH, height: DEFAULT_NODE_HEIGHT };

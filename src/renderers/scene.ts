@@ -29,6 +29,7 @@ export interface SceneEdge {
   inputIndex: number;
   label?: string;
   inactive?: boolean;
+  hidden?: boolean;
   style?: CSSProperties;
 }
 

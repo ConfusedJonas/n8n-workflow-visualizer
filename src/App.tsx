@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { Download, Flag, FolderOpen, GitBranch, Info, Layers3, Network, Play, Repeat2, Shuffle, Square, Upload, X } from 'lucide-react';
+import { Download, Flag, FolderOpen, GitBranch, Info, Layers3, Network, Play, RefreshCw, Repeat2, Shuffle, Square, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GraphCanvas, type GraphCanvasHandle } from './components/GraphCanvas';
 import { Sidebar } from './components/Sidebar';
@@ -53,6 +53,7 @@ export default function App() {
   const [simulationPlan, setSimulationPlan] = useState<string[]>([]);
   const [simulationIndex, setSimulationIndex] = useState(0);
   const [simulationRunning, setSimulationRunning] = useState(false);
+  const [repeatSimulation, setRepeatSimulation] = useState(false);
   const [showStarts, setShowStarts] = useState(true);
   const [showEnds, setShowEnds] = useState(true);
   const [showBranches, setShowBranches] = useState(false);
@@ -121,11 +122,21 @@ export default function App() {
       return;
     }
     const timer = window.setTimeout(() => {
-      if (simulationIndex + 1 >= simulationPlan.length) setSimulationRunning(false);
-      else setSimulationIndex((value) => value + 1);
+      if (simulationIndex + 1 < simulationPlan.length) {
+        setSimulationIndex((value) => value + 1);
+        return;
+      }
+      if (!repeatSimulation) {
+        setSimulationRunning(false);
+        return;
+      }
+      const nextPlan = buildSimulationPlan(scene, simulationMode, checkpoints);
+      setSimulationPlan(nextPlan);
+      setSimulationIndex(0);
+      if (!nextPlan.length) setSimulationRunning(false);
     }, simulationSpeed);
     return () => window.clearTimeout(timer);
-  }, [simulationRunning, simulationPlan, simulationIndex, simulationSpeed]);
+  }, [simulationRunning, simulationPlan, simulationIndex, simulationSpeed, repeatSimulation, scene, simulationMode, checkpoints]);
 
   const importFiles = useCallback(async (fileList: FileList | File[]) => {
     const files = Array.from(fileList);
@@ -295,6 +306,7 @@ export default function App() {
                   <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
                   <button type="button" className={simulationMode === 'custom' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationMode('custom'); }}><Flag size={13} /> Custom</button>
                 </div>
+                <button type="button" aria-pressed={repeatSimulation} className={`repeat-toggle ${repeatSimulation ? 'is-active' : ''}`} onClick={() => setRepeatSimulation((value) => !value)} title="Automatically start a new simulation when the current one finishes"><RefreshCw size={13} /> Repeat</button>
                 {simulationMode === 'custom' ? <span className="checkpoint-help">Click nodes to set checkpoints · {checkpoints.size} selected <button type="button" onClick={() => setCheckpoints(new Set())}>Clear</button></span> : <span className="checkpoint-help">Branches are chosen randomly.</span>}
               </div>
               <div className="simulation-overlays" aria-label="Simulation highlights">

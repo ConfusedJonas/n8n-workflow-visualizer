@@ -35,4 +35,22 @@ describe('workflow simulation', () => {
     const plan = buildSimulationPlan(scene, 'random', new Set(), () => 0);
     expect(plan).toEqual(['start', 'branch', 'loop', 'branch', 'end']);
   });
+
+  it('runs each distinct loop path once, exits, and reaches an outside checkpoint', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'gate', 'split', 'left', 'right', 'checkpoint', 'end'].map(node),
+      edges: [
+        edge('a', 'start', 'gate'),
+        edge('b', 'gate', 'split', 0),
+        edge('c', 'gate', 'checkpoint', 1),
+        edge('d', 'split', 'left', 0),
+        edge('e', 'split', 'right', 1),
+        edge('f', 'left', 'gate'),
+        edge('g', 'right', 'gate'),
+        edge('h', 'checkpoint', 'end'),
+      ],
+    };
+    const plan = buildSimulationPlan(scene, 'custom', new Set(['checkpoint']), () => 0);
+    expect(plan).toEqual(['start', 'gate', 'split', 'left', 'gate', 'split', 'right', 'gate', 'checkpoint', 'end']);
+  });
 });

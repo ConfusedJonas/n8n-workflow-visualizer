@@ -84,8 +84,8 @@ button { color: inherit; }
 .simulation-run { min-width: 92px; padding: 7px 10px; font-size: 11px; }
 .simulation-run.is-running { border-color: #9b4d56; background: #47252a; }
 .mode-switch { gap: 2px; padding: 2px; border: 1px solid #34343d; border-radius: 7px; }
-.mode-switch button, .simulation-overlays button { display: inline-flex; gap: 4px; align-items: center; padding: 4px 7px; border: 0; border-radius: 5px; color: #9999a5; background: transparent; font-size: 9px; cursor: pointer; }
-.mode-switch button.is-active, .simulation-overlays button.is-active { color: white; background: #34343d; }
+.mode-switch button, .simulation-overlays button, .repeat-toggle { display: inline-flex; gap: 4px; align-items: center; padding: 4px 7px; border: 0; border-radius: 5px; color: #9999a5; background: transparent; font-size: 9px; cursor: pointer; }
+.mode-switch button.is-active, .simulation-overlays button.is-active, .repeat-toggle.is-active { color: white; background: #34343d; }
 .checkpoint-help { color: #9999a5; font-size: 9px; }
 .checkpoint-help button { padding: 0; border: 0; color: #d3b0f4; background: transparent; cursor: pointer; }
 .simulation-overlays > span:first-child { color: #777783; font-size: 9px; }
@@ -129,6 +129,7 @@ button { color: inherit; }
 .canvas-node.is-loop-node .node-tile { outline: 2px dashed #6fa8ff; outline-offset: 4px; }
 .canvas-node.is-boundary-entry .node-tile { border-color: #37d88a; box-shadow: 0 0 0 2px rgba(55, 216, 138, .22); }
 .canvas-node.is-boundary-exit .node-tile { border-color: #ef6673; box-shadow: 0 0 0 2px rgba(239, 102, 115, .22); }
+.canvas-node.is-boundary-entry.is-boundary-exit .node-tile { border-color: #37d88a; outline: 2px solid #ef6673; outline-offset: 3px; box-shadow: 0 0 0 2px rgba(55, 216, 138, .18); }
 .canvas-node .react-flow__handle { width: 12px; height: 12px; border-color: #29292c; }
 .handle-label { position: absolute; z-index: 1; color: #a8a8af; font-size: 9px; line-height: 1; pointer-events: none; transform: translateY(-50%); }
 .handle-label.input-label { left: 11px; }
@@ -147,7 +148,8 @@ button { color: inherit; }
 .workflow-boundary { width: 100%; height: 100%; border: 1px solid #5d536f; border-radius: 14px; background: rgba(87, 70, 112, .11); box-shadow: inset 0 0 40px rgba(103, 79, 139, .08); cursor: grab; pointer-events: auto; }
 .workflow-boundary header { display: flex; justify-content: space-between; align-items: center; height: 42px; padding: 0 13px; border-bottom: 1px solid rgba(133, 115, 159, .35); color: #c9b7e6; background: rgba(92, 72, 121, .14); font-size: 11px; font-weight: 700; }
 .workflow-boundary header span { display: flex; gap: 7px; align-items: center; }
-.workflow-boundary header small { color: #9c8eac; font-size: 8px; font-weight: 500; }
+.workflow-boundary header small { max-width: 56%; overflow: hidden; color: #9c8eac; font-size: 8px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.workflow-boundary .boundary-handle { width: 1px; height: 1px; border: 0; opacity: 0; background: transparent; pointer-events: none; }
 .boundary-port { position: relative; display: grid; width: 100%; height: 100%; place-items: center; border: 1px solid #767681; border-radius: 50%; background: #2c2c34; box-shadow: 0 3px 10px rgba(0,0,0,.3); }
 .boundary-port span { position: absolute; top: 100%; width: max-content; max-width: 130px; margin-top: 5px; color: #aaaab5; font-size: 8px; text-align: center; }
 .boundary-port.status-warning { border-color: #d3974f; background: #46321f; }

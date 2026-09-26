@@ -13,7 +13,7 @@ export function shiftForExpansion(
   anchorId: string,
   expansionWidth: number,
   expansionHeight: number,
-  gap = 160,
+  gap = 220,
 ): ExpansionShiftResult {
   const anchor = nodes.find((node) => node.id === anchorId);
   if (!anchor) return { nodes, delta: 0 };
@@ -30,7 +30,7 @@ export function shiftForExpansion(
     nodes: nodes.map((node) => {
       if (node.id === anchorId) return node;
       const downstream = node.x > anchor.x;
-      const colliding = intersects(node, expansionRect) && node.x >= anchor.x;
+      const colliding = intersects(node, expansionRect) && node.x + node.width > anchor.x;
       return downstream || colliding ? { ...node, x: node.x + delta } : node;
     }),
   };

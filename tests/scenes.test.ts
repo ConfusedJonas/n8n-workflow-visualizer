@@ -49,15 +49,19 @@ describe('scene builders', () => {
     const scene = buildExpandedScene(workspace, 'workflow:main');
     expect(scene.nodes.some((item) => item.kind === 'boundary' && item.x === 280)).toBe(true);
     expect(scene.nodes.some((item) => item.id.includes('/node:trigger'))).toBe(false);
-    const entry = scene.nodes.find((item) => item.id.endsWith('/entry'));
-    expect(entry).toBeDefined();
-    expect(scene.edges.filter((edge) => edge.source === entry?.id)).toHaveLength(2);
+    const entries = scene.nodes.filter((item) => item.data.boundaryEntry);
+    expect(entries.map((item) => item.data.label).sort()).toEqual(['Left branch', 'Right branch']);
+    expect(scene.nodes.some((item) => item.kind === 'port')).toBe(false);
+    expect(scene.edges.filter((edge) => edge.hidden && entries.some((entry) => edge.target === entry.id))).toHaveLength(2);
+    const boundary = scene.nodes.find((item) => item.kind === 'boundary')!;
+    expect(scene.edges.some((edge) => !edge.hidden && edge.target === boundary.id)).toBe(true);
   });
 
-  it('uses a runtime result port for multiple terminals and a terminal for a single exit', () => {
+  it('marks every possible terminal without adding result ports', () => {
     const branchedWorkspace = createWorkspace([parse(mainWorkflow()), parse(childWorkflow())]);
     const branched = buildExpandedScene(branchedWorkspace, 'workflow:main');
-    expect(branched.nodes.some((item) => item.id.includes('/result'))).toBe(true);
+    expect(branched.nodes.filter((item) => item.data.boundaryExit)).toHaveLength(2);
+    expect(branched.nodes.some((item) => item.id.includes('/result'))).toBe(false);
 
     const singleChild = workflow('single', 'Single child', [
       node('Input', 'trigger', [0, 0], 'n8n-nodes-base.executeWorkflowTrigger'), node('Only', 'only', [240, 0]),
@@ -67,10 +71,11 @@ describe('scene builders', () => {
     expect(expanded.nodes.some((item) => item.id.includes('workflow:main/call/result'))).toBe(false);
   });
 
-  it('keeps an entry warning for absent or ambiguous triggers', () => {
+  it('marks possible starts and records a boundary warning for absent or ambiguous triggers', () => {
     const noTrigger = workflow('no-trigger', 'No trigger', [node('A', 'a', [0, 0])]);
     const scene = buildExpandedScene(createWorkspace([parse(mainWorkflow('no-trigger')), parse(noTrigger)]), 'workflow:main');
-    expect(scene.nodes.some((item) => item.kind === 'port' && item.data.status === 'warning')).toBe(true);
+    expect(scene.nodes.some((item) => item.data.label === 'A' && item.data.boundaryEntry)).toBe(true);
+    expect(scene.nodes.find((item) => item.kind === 'boundary')?.data.entryWarning).toBeTruthy();
   });
 
   it('renders disabled, missing, collapsed, and recursive calls as distinct placeholders', () => {
@@ -102,7 +107,7 @@ describe('scene builders', () => {
     ];
     const once = shiftForExpansion(nodes, 'call', 500, 300);
     const twice = shiftForExpansion(once.nodes, 'call', 650, 300);
-    expect(once.nodes.find((item) => item.id === 'after')).toMatchObject({ x: 820, y: 100 });
+    expect(once.nodes.find((item) => item.id === 'after')).toMatchObject({ x: 880, y: 100 });
     expect(once.nodes.find((item) => item.id === 'above')).toMatchObject({ x: 0, y: -400 });
     expect(twice.nodes.find((item) => item.id === 'after')!.x).toBeGreaterThan(once.nodes.find((item) => item.id === 'after')!.x);
   });

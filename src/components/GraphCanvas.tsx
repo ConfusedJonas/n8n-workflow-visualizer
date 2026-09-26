@@ -31,6 +31,7 @@ import {
   RotateCcw,
   SquarePen,
   Split,
+  Undo2,
   Workflow,
   Wrench,
 } from 'lucide-react';
@@ -80,6 +81,11 @@ interface CanvasNodeData extends Record<string, unknown> {
   isBranch?: boolean;
   isLoop?: boolean;
   boundaryRole?: string;
+  boundaryEntry?: boolean;
+  boundaryExit?: boolean;
+  inputAnchor?: number;
+  outputAnchor?: number;
+  entryWarning?: string;
 }
 
 type CanvasNode = Node<CanvasNodeData>;
@@ -117,8 +123,8 @@ function stateClasses(data: CanvasNodeData): string {
     data.isEnd ? 'is-end-node' : '',
     data.isBranch ? 'is-branch-node' : '',
     data.isLoop ? 'is-loop-node' : '',
-    data.boundaryRole === 'entry' ? 'is-boundary-entry' : '',
-    data.boundaryRole === 'exit' ? 'is-boundary-exit' : '',
+    data.boundaryEntry || data.boundaryRole === 'entry' ? 'is-boundary-entry' : '',
+    data.boundaryExit || data.boundaryRole === 'exit' ? 'is-boundary-exit' : '',
   ].filter(Boolean).join(' ');
 }
 
@@ -359,11 +365,15 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
 }
 
 function BoundaryNode({ data }: NodeProps<CanvasNode>) {
+  const inputTop = `${Number(data.inputAnchor ?? 50)}%`;
+  const outputTop = `${Number(data.outputAnchor ?? 50)}%`;
   return (
     <section className="workflow-boundary" title="Click to collapse this sub-workflow">
+      {(data.inputHandles ?? []).map((id) => <Handle key={id} id={id} type="target" position={Position.Left} className="boundary-handle" style={{ top: inputTop }} />)}
+      {(data.outputHandles ?? []).map((id) => <Handle key={id} id={id} type="source" position={Position.Right} className="boundary-handle" style={{ top: outputTop }} />)}
       <header>
         <span><Layers3 size={16} /> {String(data.label ?? 'Sub-workflow')}</span>
-        <small>Click background to collapse</small>
+        <small>{data.entryWarning ? String(data.entryWarning) : 'Click background to collapse'}</small>
       </header>
     </section>
   );
@@ -858,7 +868,20 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
     style: edge.style,
     animated: edge.connectionType !== 'main' && !edge.inactive,
     className: edge.inactive ? 'inactive-edge' : undefined,
+    hidden: edge.hidden,
   })), [scene]);
+
+  const resetNodeLocations = useCallback(() => {
+    offsetsRef.current.clear();
+    setNodes((current) => current.map((node) => {
+      const base = basePositionsRef.current.get(node.id);
+      return base ? { ...node, position: { ...base } } : node;
+    }));
+    window.requestAnimationFrame(() => {
+      updateNodeInternals(nodes.map((node) => node.id));
+      void instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 });
+    });
+  }, [instance, nodes, setNodes, updateNodeInternals]);
 
   useImperativeHandle(ref, () => ({
     fit: () => void instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 }),
@@ -905,6 +928,9 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
         <Controls showInteractive={false} showFitView={false}>
           <ControlButton title="Reset view" aria-label="Reset view" onClick={() => instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 })}>
             <RotateCcw size={15} />
+          </ControlButton>
+          <ControlButton title="Reset node locations" aria-label="Reset node locations" onClick={resetNodeLocations}>
+            <Undo2 size={15} />
           </ControlButton>
         </Controls>
       </ReactFlow>

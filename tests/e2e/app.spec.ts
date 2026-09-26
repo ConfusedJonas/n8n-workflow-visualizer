@@ -40,9 +40,9 @@ test('imports peers independently, resolves a later child, switches views, colla
   await page.getByText('Content Operations', { exact: true }).first().click();
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
-  await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(4);
-  await expect(page.getByTestId('graph-stage').locator('.status-boundary-entry')).toHaveCount(1);
-  await expect(page.getByTestId('graph-stage').locator('.status-boundary-exit')).toHaveCount(1);
+  await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(0);
+  await expect(page.getByTestId('graph-stage').locator('.is-boundary-entry')).toHaveCount(2);
+  await expect(page.getByTestId('graph-stage').locator('.is-boundary-exit')).toHaveCount(1);
   const boundaryBefore = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
   const childBefore = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
   if (!boundaryBefore || !childBefore) throw new Error('Expanded workflow geometry was unavailable.');
@@ -111,6 +111,10 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   await page.mouse.up();
   const firstAfter = await first.boundingBox();
   expect(firstAfter?.x).not.toBeCloseTo(firstBefore.x, 0);
+  await page.getByRole('button', { name: 'Reset node locations' }).click();
+  const firstReset = await first.boundingBox();
+  expect(firstReset?.x).toBeCloseTo(firstBefore.x, 0);
+  expect(firstReset?.y).toBeCloseTo(firstBefore.y, 0);
   await first.click();
   await page.keyboard.down('Control');
   await middle.click();
@@ -223,6 +227,11 @@ test('aligns an IF true output with the exported successor position', async ({ p
   await page.getByRole('button', { name: 'Simulate', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1);
   await expect(page.getByRole('button', { name: 'Simulate', exact: true })).toBeVisible({ timeout: 3000 });
+  await page.getByRole('button', { name: 'Repeat', exact: true }).click();
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click();
+  await page.waitForTimeout(1000);
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
 });
 
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {
