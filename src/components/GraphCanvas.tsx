@@ -28,10 +28,8 @@ import {
   Layers3,
   ListTree,
   MousePointer2,
-  RotateCcw,
   SquarePen,
   Split,
-  Undo2,
   Workflow,
   Wrench,
 } from 'lucide-react';
@@ -75,11 +73,12 @@ interface CanvasNodeData extends Record<string, unknown> {
   outputLabels?: Record<string, string>;
   onToggle?: (path: string) => void;
   isSimulationActive?: boolean;
+  isSimulationExecuted?: boolean;
+  executionCount?: number;
   isCheckpoint?: boolean;
   isStart?: boolean;
-  isEnd?: boolean;
-  isBranch?: boolean;
   isLoop?: boolean;
+  loopNumbers?: number[];
   boundaryRole?: string;
   boundaryEntry?: boolean;
   boundaryExit?: boolean;
@@ -100,32 +99,44 @@ interface GraphCanvasProps {
   onTogglePath?: (path: string) => void;
   onNodeActivate?: (id: string) => void;
   highlightMissing?: boolean;
-  activeNodeId?: string;
+  activeNodeIds?: Set<string>;
+  activeEdgeIds?: Set<string>;
+  executedCounts?: Map<string, number>;
+  executedEdgeIds?: Set<string>;
   checkpointIds?: Set<string>;
   startIds?: Set<string>;
-  endIds?: Set<string>;
-  branchIds?: Set<string>;
-  loopIds?: Set<string>;
+  loopGroups?: string[][];
   showStarts?: boolean;
-  showEnds?: boolean;
-  showBranches?: boolean;
   showLoops?: boolean;
 }
 
 const stickyColors = ['#fff0a6', '#a9d7ff', '#b8f2cf', '#ffc8df', '#d7c2ff', '#ffd1a8', '#b8efe9'];
 const EMPTY_IDS = new Set<string>();
+const EMPTY_COUNTS = new Map<string, number>();
 
 function stateClasses(data: CanvasNodeData): string {
   return [
     data.isSimulationActive ? 'is-simulation-active' : '',
+    data.isSimulationExecuted ? 'is-simulation-executed' : '',
     data.isCheckpoint ? 'is-checkpoint' : '',
     data.isStart ? 'is-start-node' : '',
-    data.isEnd ? 'is-end-node' : '',
-    data.isBranch ? 'is-branch-node' : '',
     data.isLoop ? 'is-loop-node' : '',
-    data.boundaryEntry || data.boundaryRole === 'entry' ? 'is-boundary-entry' : '',
-    data.boundaryExit || data.boundaryRole === 'exit' ? 'is-boundary-exit' : '',
   ].filter(Boolean).join(' ');
+}
+
+const loopColors = ['#6fa8ff', '#f59e70', '#c084fc', '#36c99a', '#e8c75a', '#f472b6', '#67d4e8'];
+
+function NodeIndicators({ data }: { data: CanvasNodeData }) {
+  return (
+    <>
+      {Number(data.executionCount ?? 0) > 1 ? <span className="execution-count" title="Execution count">×{Number(data.executionCount)}</span> : null}
+      {data.isLoop && data.loopNumbers?.length ? (
+        <span className="loop-indicators" aria-label={`Loops ${data.loopNumbers.join(', ')}`}>
+          {data.loopNumbers.map((number) => <b key={number} style={{ '--loop-color': loopColors[(number - 1) % loopColors.length] } as React.CSSProperties}>{number}</b>)}
+        </span>
+      ) : null}
+    </>
+  );
 }
 
 function handleStyle(handle: string, handles: string[], mainOffsets?: number[]): React.CSSProperties {
@@ -281,7 +292,8 @@ function CoreIcon({ glyph }: { glyph: CoreGlyph }) {
 
 function WorkflowNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
-  const style = { '--node-accent': appearance.color } as React.CSSProperties;
+  const firstLoop = data.loopNumbers?.[0];
+  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''} ${stateClasses(data)}`} style={style}>
       <div className={`node-tile shape-${appearance.shape}`}>
@@ -289,6 +301,7 @@ function WorkflowNode({ data }: NodeProps<CanvasNode>) {
         <span className="node-symbol">
           <AppearanceGlyph appearance={appearance} />
         </span>
+        <NodeIndicators data={data} />
       </div>
       <span className="node-copy" title={String(data.label ?? 'Unnamed node')}>
         <strong>{String(data.label ?? 'Unnamed node')}</strong>
@@ -348,12 +361,14 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
   const expandable = data.status === 'collapsed' && typeof data.instancePath === 'string';
   const status = String(data.status ?? 'unknown');
-  const style = { '--node-accent': appearance.color } as React.CSSProperties;
+  const firstLoop = data.loopNumbers?.[0];
+  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node placeholder-node status-${status} ${stateClasses(data)}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
       <div className={`node-tile shape-${appearance.shape}`}>
         <Handles data={data} />
         <span className="node-symbol"><AppearanceGlyph appearance={appearance} /></span>
+        <NodeIndicators data={data} />
       </div>
       <span className="node-copy">
         <strong>{String(data.label ?? 'Unresolved workflow')}</strong>
@@ -414,7 +429,7 @@ interface RouteRect { left: number; right: number; top: number; bottom: number }
 function nodeRect(node: Node): RouteRect {
   const width = node.measured?.width ?? node.width ?? Number(node.style?.width ?? 0);
   const height = node.measured?.height ?? node.height ?? Number(node.style?.height ?? 0);
-  const clearance = 0;
+  const clearance = node.type === 'boundary' ? 24 : 0;
   return {
     left: node.position.x - clearance,
     right: node.position.x + width + clearance,
@@ -666,11 +681,19 @@ function verticalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteR
 
 function N8nRoutedEdge(props: EdgeProps) {
   const allNodes = useNodes();
+  const source = { x: props.sourceX, y: props.sourceY };
+  const target = { x: props.targetX, y: props.targetY };
   const obstacles = allNodes
-    // Sticky notes and group boundaries are canvas annotations, not routing
-    // obstacles. Treating their large rectangles as solid made dense loop
-    // edges fall back through real nodes.
-    .filter((node) => node.type !== 'boundary' && node.type !== 'sticky' && node.id !== props.source && node.id !== props.target)
+    .filter((node) => node.type !== 'sticky' && node.id !== props.source && node.id !== props.target)
+    // A boundary that contains both endpoints is their parent group, not an
+    // obstacle. Other expanded workflow boxes must remain solid so outside
+    // connections route around them instead of cutting through their content.
+    .filter((node) => {
+      if (node.type !== 'boundary') return true;
+      const rect = nodeRect(node);
+      const contains = (point: RoutePoint) => point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom;
+      return !(contains(source) && contains(target));
+    })
     .map(nodeRect);
   const fallback = getSmoothStepPath({
     sourceX: props.sourceX,
@@ -684,8 +707,6 @@ function N8nRoutedEdge(props: EdgeProps) {
   });
   const supportsHorizontalRouting = props.sourcePosition === Position.Right && props.targetPosition === Position.Left;
   const supportsVerticalRouting = props.sourcePosition === Position.Bottom && props.targetPosition === Position.Top;
-  const source = { x: props.sourceX, y: props.sourceY };
-  const target = { x: props.targetX, y: props.targetY };
   const route = supportsHorizontalRouting
     ? horizontalRoute(source, target, obstacles)
     : supportsVerticalRouting ? verticalRoute(source, target, obstacles) : undefined;
@@ -714,6 +735,27 @@ function N8nRoutedEdge(props: EdgeProps) {
 }
 
 const edgeTypes = { routed: N8nRoutedEdge };
+
+function ResetViewIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 7a8 8 0 0 1 12.8-2.4L20 7M20 3v4h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 15s3-4 8-4 8 4 8 4-3 4-8 4-8-4-8-4Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <circle cx="12" cy="15" r="1.8" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ResetNodesIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M5 7a8 8 0 0 1 12.8-2.4L20 7M20 3v4h-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="4" y="12" width="5" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <rect x="15" y="15" width="5" height="5" rx="1" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M9 14.5h3a3 3 0 0 1 3 3" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function handlesFor(sceneNode: SceneNode, scene: GraphScene) {
   const inputs = new Set<string>();
@@ -752,22 +794,22 @@ function handlesFor(sceneNode: SceneNode, scene: GraphScene) {
   return { inputHandles, outputHandles, inputLabels, outputLabels };
 }
 
-const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
-  scene,
-  onTogglePath,
-  onNodeActivate,
-  highlightMissing = false,
-  activeNodeId,
-  checkpointIds = EMPTY_IDS,
-  startIds = EMPTY_IDS,
-  endIds = EMPTY_IDS,
-  branchIds = EMPTY_IDS,
-  loopIds = EMPTY_IDS,
-  showStarts = false,
-  showEnds = false,
-  showBranches = false,
-  showLoops = false,
-}, ref) => {
+const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
+  ({
+    scene,
+    onTogglePath,
+    onNodeActivate,
+    highlightMissing = false,
+    activeNodeIds = EMPTY_IDS,
+    activeEdgeIds = EMPTY_IDS,
+    executedCounts = EMPTY_COUNTS,
+    executedEdgeIds = EMPTY_IDS,
+    checkpointIds = EMPTY_IDS,
+    startIds = EMPTY_IDS,
+    loopGroups = [],
+    showStarts = false,
+    showLoops = false,
+  }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
   const updateNodeInternals = useUpdateNodeInternals();
@@ -789,15 +831,16 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
       ...node.data,
       ...handlesFor(node, scene),
       onToggle: onTogglePath,
-      isSimulationActive: node.id === activeNodeId,
+      isSimulationActive: activeNodeIds.has(node.id),
+      isSimulationExecuted: executedCounts.has(node.id),
+      executionCount: executedCounts.get(node.id) ?? 0,
       isCheckpoint: checkpointIds.has(node.id),
       isStart: showStarts && startIds.has(node.id),
-      isEnd: showEnds && endIds.has(node.id),
-      isBranch: showBranches && branchIds.has(node.id),
-      isLoop: showLoops && loopIds.has(node.id),
+      isLoop: showLoops && loopGroups.some((group) => group.includes(node.id)),
+      loopNumbers: showLoops ? loopGroups.flatMap((group, index) => group.includes(node.id) ? [index + 1] : []) : [],
     },
   };
-  }), [scene, onTogglePath, activeNodeId, checkpointIds, startIds, endIds, branchIds, loopIds, showStarts, showEnds, showBranches, showLoops]);
+  }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, startIds, loopGroups, showStarts, showLoops]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
   useEffect(() => {
     setNodes((current) => {
@@ -867,9 +910,9 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
     markerEnd: { type: MarkerType.ArrowClosed, color: connectionColor(edge.connectionType), width: 10, height: 10 },
     style: edge.style,
     animated: edge.connectionType !== 'main' && !edge.inactive,
-    className: edge.inactive ? 'inactive-edge' : undefined,
+    className: [edge.inactive ? 'inactive-edge' : '', executedEdgeIds.has(edge.id) ? 'is-simulation-executed-edge' : '', activeEdgeIds.has(edge.id) ? 'is-simulation-active-edge' : ''].filter(Boolean).join(' ') || undefined,
     hidden: edge.hidden,
-  })), [scene]);
+  })), [scene, executedEdgeIds, activeEdgeIds]);
 
   const resetNodeLocations = useCallback(() => {
     offsetsRef.current.clear();
@@ -927,10 +970,10 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
         <Background color="#303034" gap={16} size={1} />
         <Controls showInteractive={false} showFitView={false}>
           <ControlButton title="Reset view" aria-label="Reset view" onClick={() => instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 })}>
-            <RotateCcw size={15} />
+            <ResetViewIcon />
           </ControlButton>
           <ControlButton title="Reset node locations" aria-label="Reset node locations" onClick={resetNodeLocations}>
-            <Undo2 size={15} />
+            <ResetNodesIcon />
           </ControlButton>
         </Controls>
       </ReactFlow>

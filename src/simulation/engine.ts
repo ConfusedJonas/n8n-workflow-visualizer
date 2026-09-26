@@ -7,6 +7,18 @@ export interface SimulationAnalysis {
   ends: Set<string>;
   branches: Set<string>;
   loops: Set<string>;
+  loopGroups: string[][];
+}
+
+export interface SimulationStep {
+  nodeIds: string[];
+  edgeIds: string[];
+}
+
+interface SimulationToken {
+  id: string;
+  path: string[];
+  edgeId?: string;
 }
 
 function executableNodeIds(scene: GraphScene): Set<string> {
@@ -27,6 +39,7 @@ function executionEdges(scene: GraphScene): SceneEdge[] {
 function outgoingMap(ids: Set<string>, edges: SceneEdge[]): Map<string, SceneEdge[]> {
   const outgoing = new Map([...ids].map((id) => [id, [] as SceneEdge[]]));
   edges.forEach((edge) => outgoing.get(edge.source)?.push(edge));
+  outgoing.forEach((items) => items.sort((left, right) => left.outputIndex - right.outputIndex || left.target.localeCompare(right.target) || left.id.localeCompare(right.id)));
   return outgoing;
 }
 
@@ -60,9 +73,9 @@ function stronglyConnectedComponents(ids: Set<string>, outgoing: Map<string, Sce
       onStack.delete(member);
       component.push(member);
     } while (member !== id);
-    components.push(component);
+    components.push(component.sort());
   };
-  ids.forEach((id) => { if (!indices.has(id)) visit(id); });
+  [...ids].sort().forEach((id) => { if (!indices.has(id)) visit(id); });
   return components;
 }
 
@@ -78,6 +91,32 @@ function loopMetadata(ids: Set<string>, outgoing: Map<string, SceneEdge[]>) {
   return { loopComponents, componentByNode };
 }
 
+function cycleSignature(nodes: string[]): string {
+  return [...new Set(nodes)].sort().join('\u0000');
+}
+
+function simpleCycleGroups(ids: Set<string>, outgoing: Map<string, SceneEdge[]>, limit = 256): string[][] {
+  const signatures = new Map<string, string[]>();
+  const sortedIds = [...ids].sort();
+  let traversals = 0;
+  for (const start of sortedIds) {
+    const walk = (id: string, path: string[], seen: Set<string>) => {
+      traversals += 1;
+      if (signatures.size >= limit || traversals > limit * 100) return;
+      for (const edge of outgoing.get(id) ?? []) {
+        if (edge.target === start) {
+          const signature = cycleSignature(path);
+          if (!signatures.has(signature)) signatures.set(signature, [...new Set(path)].sort());
+        } else if (!seen.has(edge.target) && edge.target >= start) {
+          walk(edge.target, [...path, edge.target], new Set(seen).add(edge.target));
+        }
+      }
+    };
+    walk(start, [start], new Set([start]));
+  }
+  return [...signatures.values()].sort((left, right) => left.join('\u0000').localeCompare(right.join('\u0000')));
+}
+
 export function analyzeSimulationGraph(scene: GraphScene): SimulationAnalysis {
   const ids = executableNodeIds(scene);
   const edges = executionEdges(scene);
@@ -87,8 +126,9 @@ export function analyzeSimulationGraph(scene: GraphScene): SimulationAnalysis {
   const starts = new Set([...ids].filter((id) => (incoming.get(id) ?? 0) === 0));
   const ends = new Set([...ids].filter((id) => !(outgoing.get(id)?.length)));
   const branches = new Set([...ids].filter((id) => new Set((outgoing.get(id) ?? []).map((edge) => edge.outputIndex)).size > 1));
+  const loopGroups = simpleCycleGroups(ids, outgoing);
   const loops = new Set(loopMetadata(ids, outgoing).loopComponents.flat());
-  return { starts, ends, branches, loops };
+  return { starts, ends, branches, loops, loopGroups };
 }
 
 function reachableCheckpoints(start: string, outgoing: Map<string, SceneEdge[]>, checkpoints: Set<string>): Set<string> {
@@ -105,26 +145,35 @@ function reachableCheckpoints(start: string, outgoing: Map<string, SceneEdge[]>,
   return found;
 }
 
+function canReach(start: string, target: string, outgoing: Map<string, SceneEdge[]>): boolean {
+  if (start === target) return true;
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const edge of outgoing.get(id) ?? []) {
+      if (edge.target === target) return true;
+      if (!seen.has(edge.target)) {
+        seen.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+  return false;
+}
+
 function groupedOutputs(edges: SceneEdge[]): SceneEdge[][] {
   const groups = new Map<number, SceneEdge[]>();
   edges.forEach((edge) => groups.set(edge.outputIndex, [...(groups.get(edge.outputIndex) ?? []), edge]));
   return [...groups.entries()].sort(([left], [right]) => left - right).map(([, group]) => group);
 }
 
-function cycleSignature(nodes: string[]): string {
-  return [...new Set(nodes)].sort().join('\u0000');
-}
-
-function cycleSignaturesForGroup(
-  start: string,
-  group: SceneEdge[],
-  outgoing: Map<string, SceneEdge[]>,
-  component: Set<string>,
-  limit = 128,
-): Set<string> {
+function cycleSignaturesForGroup(start: string, group: SceneEdge[], outgoing: Map<string, SceneEdge[]>, component: Set<string>, limit = 128): Set<string> {
   const signatures = new Set<string>();
+  let traversals = 0;
   const walk = (id: string, path: string[], seen: Set<string>) => {
-    if (signatures.size >= limit) return;
+    traversals += 1;
+    if (signatures.size >= limit || traversals > limit * 100) return;
     if (id === start) {
       signatures.add(cycleSignature(path));
       return;
@@ -138,12 +187,7 @@ function cycleSignaturesForGroup(
   return signatures;
 }
 
-function canEscapeWithoutReturning(
-  start: string,
-  group: SceneEdge[],
-  outgoing: Map<string, SceneEdge[]>,
-  component: Set<string>,
-): boolean {
+function canEscapeWithoutReturning(start: string, group: SceneEdge[], outgoing: Map<string, SceneEdge[]>, component: Set<string>): boolean {
   const seen = new Set([start]);
   const queue = group.map((edge) => edge.target);
   while (queue.length) {
@@ -156,11 +200,7 @@ function canEscapeWithoutReturning(
   return false;
 }
 
-function checkpointGuidedGroups(
-  groups: SceneEdge[][],
-  outgoing: Map<string, SceneEdge[]>,
-  remaining: Set<string>,
-): SceneEdge[][] {
+function checkpointGuidedGroups(groups: SceneEdge[][], outgoing: Map<string, SceneEdge[]>, remaining: Set<string>): SceneEdge[][] {
   if (!remaining.size || groups.length < 2) return groups;
   const scored = groups.map((group) => ({
     group,
@@ -170,12 +210,17 @@ function checkpointGuidedGroups(
   return best > 0 ? scored.filter((item) => item.score === best).map((item) => item.group) : groups;
 }
 
-export function buildSimulationPlan(
+function visibleEdgeIds(id: string): string[] {
+  const logicalAt = id.indexOf(':logical-');
+  return logicalAt >= 0 ? [id, id.slice(0, logicalAt)] : [id];
+}
+
+export function buildSimulationSteps(
   scene: GraphScene,
   mode: SimulationMode,
   checkpoints: Set<string>,
   random: () => number = Math.random,
-): string[] {
+): SimulationStep[] {
   const ids = executableNodeIds(scene);
   const edges = executionEdges(scene);
   const outgoing = outgoingMap(ids, edges);
@@ -195,44 +240,69 @@ export function buildSimulationPlan(
     });
   }
 
-  interface QueueItem { id: string; path: string[] }
-  const queue: QueueItem[] = [...analysis.starts].sort().map((id) => ({ id, path: [] }));
+  const waiting = new Map<string, SimulationToken[]>();
+  [...analysis.starts].sort().forEach((id) => waiting.set(id, [{ id, path: [] }]));
   const visits = new Map<string, number>();
-  const plan: string[] = [];
+  const steps: SimulationStep[] = [];
   const maxLoopVisits = Math.max(2, allCycleSignatures.size + 2);
   const safetyLimit = Math.max(64, scene.nodes.length * (maxLoopVisits + 2) + edges.length * 4);
 
-  while (queue.length && plan.length < safetyLimit) {
-    const item = queue.shift()!;
-    const count = visits.get(item.id) ?? 0;
-    const maxVisits = analysis.loops.has(item.id) ? maxLoopVisits : 1;
-    if (count >= maxVisits) continue;
-    visits.set(item.id, count + 1);
-    plan.push(item.id);
-    remaining.delete(item.id);
-    const path = [...item.path, item.id];
+  while (waiting.size && steps.length < safetyLimit) {
+    const candidates = [...waiting.keys()].filter((id) => {
+      const count = visits.get(id) ?? 0;
+      return count < (analysis.loops.has(id) ? maxLoopVisits : 1);
+    });
+    for (const id of [...waiting.keys()]) if (!candidates.includes(id)) waiting.delete(id);
+    if (!candidates.length) break;
 
-    let groups = groupedOutputs(outgoing.get(item.id) ?? []);
-    const component = componentByNode.get(item.id);
-    if (component && groups.length) {
-      const withUnexploredCycles = groups.filter((group) => {
-        const key = `${item.id}:${group[0]?.outputIndex ?? 0}`;
-        return [...(cycleCache.get(key) ?? [])].some((signature) => !completedCycles.has(signature));
-      });
-      if (withUnexploredCycles.length) groups = withUnexploredCycles;
-      else groups = groups.filter((group) => canEscapeWithoutReturning(item.id, group, outgoing, component));
-    }
-    if (!groups.length) continue;
-    if (mode === 'custom') groups = checkpointGuidedGroups(groups, outgoing, remaining);
-    if (groups.length > 1) groups = [groups[Math.min(groups.length - 1, Math.floor(random() * groups.length))]];
+    let ready = candidates.filter((candidate) => analysis.loops.has(candidate) || !candidates.some((other) => (
+      other !== candidate && canReach(other, candidate, outgoing)
+    )));
+    if (!ready.length) ready = [candidates.sort()[0]];
+    ready.sort();
 
-    for (const edge of groups.flat()) {
-      const repeatedAt = path.lastIndexOf(edge.target);
-      if (repeatedAt >= 0) completedCycles.add(cycleSignature(path.slice(repeatedAt)));
-      queue.push({ id: edge.target, path });
+    const arrivals = ready.flatMap((id) => waiting.get(id) ?? []);
+    steps.push({
+      nodeIds: ready,
+      edgeIds: [...new Set(arrivals.flatMap((token) => token.edgeId ? visibleEdgeIds(token.edgeId) : []))],
+    });
+
+    const produced: SimulationToken[] = [];
+    for (const id of ready) {
+      const tokens = waiting.get(id) ?? [{ id, path: [] }];
+      waiting.delete(id);
+      visits.set(id, (visits.get(id) ?? 0) + 1);
+      remaining.delete(id);
+      const token = tokens.sort((left, right) => left.path.length - right.path.length || left.path.join('\u0000').localeCompare(right.path.join('\u0000')))[0];
+      const path = [...token.path, id];
+
+      let groups = groupedOutputs(outgoing.get(id) ?? []);
+      const component = componentByNode.get(id);
+      if (component && groups.length) {
+        const withUnexploredCycles = groups.filter((group) => {
+          const key = `${id}:${group[0]?.outputIndex ?? 0}`;
+          return [...(cycleCache.get(key) ?? [])].some((signature) => !completedCycles.has(signature));
+        });
+        if (withUnexploredCycles.length) groups = withUnexploredCycles;
+        else groups = groups.filter((group) => canEscapeWithoutReturning(id, group, outgoing, component));
+      }
+      if (!groups.length) continue;
+      if (mode === 'custom') groups = checkpointGuidedGroups(groups, outgoing, remaining);
+      if (groups.length > 1) groups = [groups[Math.min(groups.length - 1, Math.floor(random() * groups.length))]];
+
+      for (const edge of groups.flat()) {
+        const repeatedAt = path.lastIndexOf(edge.target);
+        if (repeatedAt >= 0) completedCycles.add(cycleSignature(path.slice(repeatedAt)));
+        produced.push({ id: edge.target, path, edgeId: edge.id });
+      }
     }
+    for (const token of produced) waiting.set(token.id, [...(waiting.get(token.id) ?? []), token]);
   }
-  return plan;
+  return steps;
+}
+
+export function buildSimulationPlan(scene: GraphScene, mode: SimulationMode, checkpoints: Set<string>, random: () => number = Math.random): string[] {
+  return buildSimulationSteps(scene, mode, checkpoints, random).flatMap((step) => step.nodeIds);
 }
 
 export function checkpointsMayConflict(scene: GraphScene, checkpoints: Set<string>): boolean {

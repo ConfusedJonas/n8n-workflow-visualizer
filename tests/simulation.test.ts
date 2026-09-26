@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphScene } from '../src/renderers/scene';
-import { analyzeSimulationGraph, buildSimulationPlan, checkpointsMayConflict } from '../src/simulation/engine';
+import { analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict } from '../src/simulation/engine';
 
 const node = (id: string) => ({ id, kind: 'workflow' as const, x: 0, y: 0, width: 100, height: 80, data: {} });
 const edge = (id: string, source: string, target: string, outputIndex = 0) => ({ id, source, target, connectionType: 'main', outputIndex, inputIndex: 0 });
@@ -52,5 +52,37 @@ describe('workflow simulation', () => {
     };
     const plan = buildSimulationPlan(scene, 'custom', new Set(['checkpoint']), () => 0);
     expect(plan).toEqual(['start', 'gate', 'split', 'left', 'gate', 'split', 'right', 'gate', 'checkpoint', 'end']);
+  });
+
+  it('runs fan-out nodes together and waits for every live branch at a merge', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'fan', 'short', 'long-1', 'long-2', 'merge', 'end'].map(node),
+      edges: [
+        edge('a', 'start', 'fan'),
+        edge('b', 'fan', 'short'),
+        edge('c', 'fan', 'long-1'),
+        edge('d', 'short', 'merge'),
+        edge('e', 'long-1', 'long-2'),
+        edge('f', 'long-2', 'merge'),
+        edge('g', 'merge', 'end'),
+      ],
+    };
+    expect(buildSimulationSteps(scene, 'random', new Set(), () => 0).map((step) => step.nodeIds)).toEqual([
+      ['start'], ['fan'], ['long-1', 'short'], ['long-2'], ['merge'], ['end'],
+    ]);
+  });
+
+  it('assigns separate indicators to distinct loop paths', () => {
+    const scene: GraphScene = {
+      nodes: ['gate', 'left', 'right'].map(node),
+      edges: [
+        edge('a', 'gate', 'left', 0), edge('b', 'left', 'gate'),
+        edge('c', 'gate', 'right', 1), edge('d', 'right', 'gate'),
+      ],
+    };
+    expect(analyzeSimulationGraph(scene).loopGroups).toEqual([
+      ['gate', 'left'],
+      ['gate', 'right'],
+    ]);
   });
 });

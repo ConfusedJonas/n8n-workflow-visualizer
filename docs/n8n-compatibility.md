@@ -27,7 +27,7 @@ This project intentionally implements a permissive decoder for exported graph da
 | Database source | Legacy direct `workflowId` string; resource-locator object with `.value` and optional `cachedResultName`; omitted `source` defaults to database | Only static ID values resolve. A cached name is a display hint and is never used as identity. Expressions/interpolation/`undefined`/`null` are dynamic. |
 | Parameter source | `source: "parameter"` and `workflowJson` as literal object or JSON string; expression strings | Literal workflows become caller-scoped embedded workflows. Expressions are dynamic. Malformed literal values are invalid. |
 | Local file / URL | Deprecated `localFile` + `workflowPath`; deprecated `url` + `workflowUrl`; literal or expression value | Literals become non-expandable external placeholders. Expressions are dynamic. The browser never opens the path or fetches the URL. |
-| Execute Workflow Trigger | Versions 1, 1.1, and 1.2; `inputSource` values `workflowInputs`, `jsonExample`, and `passthrough` | Trigger parameters are preserved. Expanded view hides exactly one valid enabled trigger and keeps all of its outgoing branches. Missing, disabled, or multiple triggers produce an explicit warning port. |
+| Execute Workflow Trigger | Versions 1, 1.1, and 1.2; `inputSource` values `workflowInputs`, `jsonExample`, and `passthrough` | Trigger parameters are preserved. Expanded view hides exactly one valid enabled trigger and keeps all of its outgoing branches. Missing, disabled, or multiple triggers produce an explicit boundary warning. |
 | Sticky notes | Position on node; `parameters.content`, `width`, `height`, numeric `color` | Notes are separated from executable nodes. Missing dimensions/color use stable visual defaults. Markdown is rendered without raw HTML or remote media. |
 | Disabled nodes | `disabled: true`; field absent for enabled nodes | Disabled nodes remain visible. Disabled calls are inactive dependencies and are never expanded. |
 
@@ -37,7 +37,7 @@ The local smoke exports additionally verified a parent with 29 executable nodes 
 
 The visualizer resolves only static database IDs already imported into the browser and caller-scoped literal embedded workflows. It does not execute expressions, inspect credentials, contact an n8n instance, read local workflow paths, or fetch workflow URLs.
 
-For a child with one enabled input trigger, the trigger is hidden and all of its branch targets are marked as possible starts. Main terminals are marked as possible ends. Outside edges terminate on the child boundary rather than crossing into internal nodes; invisible graph-only links retain traversal continuity for simulation without implying which runtime terminal n8n will return.
+For a child with one enabled input trigger, the trigger is hidden and all of its branch targets are recorded as possible starts. They are highlighted only when the user enables Start nodes; main terminals use normal node styling. Outside edges terminate on the child boundary rather than crossing into internal nodes; invisible graph-only links retain traversal continuity for simulation without implying which runtime terminal n8n will return.
 
 ## Forward-compatibility policy
 

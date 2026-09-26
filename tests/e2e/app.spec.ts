@@ -41,8 +41,11 @@ test('imports peers independently, resolves a later child, switches views, colla
   await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(0);
-  await expect(page.getByTestId('graph-stage').locator('.is-boundary-entry')).toHaveCount(2);
-  await expect(page.getByTestId('graph-stage').locator('.is-boundary-exit')).toHaveCount(1);
+  await expect(page.getByTestId('graph-stage').locator('.is-start-node')).toHaveCount(0);
+  await expect(page.getByTestId('graph-stage').locator('.is-end-node, .is-boundary-exit')).toHaveCount(0);
+  await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-start-node')).toHaveCount(3);
+  await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
   const boundaryBefore = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
   const childBefore = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
   if (!boundaryBefore || !childBefore) throw new Error('Expanded workflow geometry was unavailable.');
@@ -120,8 +123,9 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   await middle.click();
   await page.keyboard.up('Control');
   await expect(page.getByTestId('graph-stage').locator('.react-flow__node.selected')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Loops', exact: true }).click();
+  await page.getByRole('button', { name: 'Individual loops', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-loop-node')).toHaveCount(3);
+  await expect(page.getByTestId('graph-stage').locator('.loop-indicators b')).toHaveCount(3);
 
   const crossesMiddle = await page.evaluate(() => {
     const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -141,6 +145,24 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
     return false;
   });
   expect(crossesMiddle).toBe(false);
+});
+
+test('animates expanded workflow entries in parallel and keeps the executed trail', async ({ page }) => {
+  await page.locator('input[type=file]').setInputFiles([
+    example('synthetic-main.json'),
+    example('synthetic-child.json'),
+  ]);
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByText('Content Operations', { exact: true }).first().click();
+  await page.getByLabel('Speed').selectOption('700');
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1);
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(2, { timeout: 2200 });
+  const activeLabels = await page.getByTestId('graph-stage').locator('.is-simulation-active strong').allTextContents();
+  expect(activeLabels.sort()).toEqual(['Build outline', 'Research context']);
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(4);
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1, { timeout: 1500 });
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(5);
 });
 
 test('centers a four-input Merge icon and aligns its outgoing handle', async ({ page }) => {
@@ -221,8 +243,6 @@ test('aligns an IF true output with the exported successor position', async ({ p
   await falseNode.click({ modifiers: ['Control'] });
   await expect(page.getByTestId('graph-stage').locator('.is-checkpoint')).toHaveCount(2);
   await expect(page.getByText('Some checkpoints conflict; one compatible branch will be chosen randomly.')).toBeVisible();
-  await page.getByRole('button', { name: 'Branches', exact: true }).click();
-  await expect(page.getByTestId('graph-stage').locator('.is-branch-node')).toHaveCount(1);
   await page.getByLabel('Speed').selectOption('250');
   await page.getByRole('button', { name: 'Simulate', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1);

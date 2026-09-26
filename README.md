@@ -13,10 +13,10 @@ A private-by-default, browser-only visualizer for n8n workflow JSON exports. Imp
 - Offers two focused views:
   - **View** — exported n8n positions with expandable nested boundaries, type-specific tiles/icons, dynamic multi-input nodes, all socket types, drag/multi-select, and conservative result routing.
   - **Dependency** — deterministic Dagre layout for the selected workflow family, including clickable missing-dependency warnings.
-- Connects external edges only to expanded workflow boundaries, while marking every internal possible start green and every possible end red without cross-boundary lines or port circles.
+- Connects external edges only to expanded workflow boundaries. Possible internal starts can be highlighted on demand; internal end nodes remain visually unchanged, with no cross-boundary lines or port circles.
 - Supports free node movement, multi-selection, camera reset, and restoring every node to its exported/generated location.
-- Simulates graph traversal without executing node logic. Random mode chooses branches; Custom mode routes toward selectable checkpoints and explains conflicting choices. Distinct loop paths are each visited once before an exit is chosen, and an optional Repeat toggle starts a fresh simulation automatically.
-- Highlights missing calls, start nodes, possible end nodes, branches, and loops on demand.
+- Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Random mode chooses branches; Custom mode routes toward selectable checkpoints and explains conflicting choices. Distinct loop paths are each visited once before an exit is chosen, and an optional Repeat toggle starts a fresh simulation automatically.
+- Highlights missing calls with a pulse, possible start nodes on demand, and gives each distinct loop a numbered color indicator.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
 - Routes orthogonal connections around node bodies while retaining every exported output and input index.
@@ -55,7 +55,7 @@ Duplicate exported IDs replace the stored workflow; the last match in an import 
 
 Only static imported database IDs and literal embedded workflows expand. Expressions are never evaluated or name-matched. File and URL source modes stay inert external placeholders.
 
-An expanded workflow hides exactly one enabled Execute Sub-workflow Trigger and marks all of its outgoing targets as possible starts. If the trigger is missing, disabled, or ambiguous, the boundary shows a warning and graph roots are marked conservatively. Every possible main terminal is marked as an end. Outside connections terminate at the workflow boundary; invisible logical links preserve simulation continuity without drawing cross-boundary lines.
+An expanded workflow hides exactly one enabled Execute Sub-workflow Trigger and records all of its outgoing targets as possible starts. The Start nodes control reveals them when requested. If the trigger is missing, disabled, or ambiguous, the boundary shows a warning and graph roots are recorded conservatively. Outside connections terminate at the workflow boundary; invisible logical links preserve simulation continuity without drawing cross-boundary lines.
 
 ## GitHub Pages
 

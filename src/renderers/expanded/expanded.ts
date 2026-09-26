@@ -144,9 +144,9 @@ function buildFragment(
     childAncestors.add(targetKey);
     let child = buildFragment(workspace, targetKey, instancePath, childAncestors, options, true, depth + 1);
     const childBounds = sceneBounds(child.nodes);
-    const contentWidth = childBounds.width + 220;
-    const contentHeight = childBounds.height + 180;
-    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight, 220);
+    const contentWidth = childBounds.width + 260;
+    const contentHeight = childBounds.height + 200;
+    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight, 280);
     scene.nodes = shifted.nodes;
     const currentCall = scene.nodes.find((node) => node.id === callId)!;
     const boundaryX = currentCall.x;
@@ -175,7 +175,7 @@ function buildFragment(
     };
     child = {
       ...child,
-      ...translateScene(child, boundaryX + 110 - childBounds.x, boundaryY + 96 - childBounds.y),
+      ...translateScene(child, boundaryX + 130 - childBounds.x, boundaryY + 106 - childBounds.y),
     };
     scene.nodes.push(boundary, ...child.nodes);
     scene.edges.push(...child.edges);

@@ -69,8 +69,11 @@ button { color: inherit; }
 .warning-link { border: 0; cursor: pointer; }
 .warning-link:hover { color: #ffe0b7; background: rgba(255, 169, 82, .2); }
 .diagnostic-pill { color: #b9abff; background: rgba(151, 125, 255, .12); }
-.expand-actions { display: flex; gap: 10px; padding-right: 3px; border-right: 1px solid #34343d; }
-.highlight-toggle { display: flex; gap: 6px; align-items: center; color: #b9b9c4; font-size: 10px; cursor: pointer; }
+.expand-actions { display: flex; gap: 6px; padding-right: 8px; border-right: 1px solid #34343d; }
+.expand-actions .text-button { padding: 6px 9px; border: 1px solid #454550; border-radius: 7px; color: #dedee5; background: #26262d; font-size: 10px; }
+.expand-actions .text-button:hover { border-color: #686875; background: #33333c; }
+.highlight-toggle { display: flex; gap: 7px; align-items: center; padding: 5px 8px; border: 1px solid #41414b; border-radius: 7px; color: #d1d1d9; background: #232329; font-size: 10px; cursor: pointer; }
+.highlight-toggle:hover { border-color: #5d5d69; background: #2a2a32; }
 .highlight-toggle input { position: absolute; opacity: 0; pointer-events: none; }
 .highlight-toggle span { position: relative; width: 27px; height: 15px; border: 1px solid #555560; border-radius: 9px; background: #26262d; transition: .15s; }
 .highlight-toggle span::after { position: absolute; top: 2px; left: 2px; width: 9px; height: 9px; border-radius: 50%; background: #a3a3ad; content: ''; transition: .15s; }
@@ -84,8 +87,9 @@ button { color: inherit; }
 .simulation-run { min-width: 92px; padding: 7px 10px; font-size: 11px; }
 .simulation-run.is-running { border-color: #9b4d56; background: #47252a; }
 .mode-switch { gap: 2px; padding: 2px; border: 1px solid #34343d; border-radius: 7px; }
-.mode-switch button, .simulation-overlays button, .repeat-toggle { display: inline-flex; gap: 4px; align-items: center; padding: 4px 7px; border: 0; border-radius: 5px; color: #9999a5; background: transparent; font-size: 9px; cursor: pointer; }
-.mode-switch button.is-active, .simulation-overlays button.is-active, .repeat-toggle.is-active { color: white; background: #34343d; }
+.mode-switch button, .simulation-overlays button, .repeat-toggle { display: inline-flex; gap: 4px; align-items: center; min-height: 27px; padding: 5px 9px; border: 1px solid #41414c; border-radius: 6px; color: #c2c2cb; background: #24242b; font-size: 9px; cursor: pointer; }
+.mode-switch button:hover, .simulation-overlays button:hover, .repeat-toggle:hover { border-color: #656572; color: white; background: #303039; }
+.mode-switch button.is-active, .simulation-overlays button.is-active, .repeat-toggle.is-active { border-color: #747482; color: white; background: #3a3a45; box-shadow: inset 0 0 0 1px rgba(255,255,255,.04); }
 .checkpoint-help { color: #9999a5; font-size: 9px; }
 .checkpoint-help button { padding: 0; border: 0; color: #d3b0f4; background: transparent; cursor: pointer; }
 .simulation-overlays > span:first-child { color: #777783; font-size: 9px; }
@@ -120,16 +124,18 @@ button { color: inherit; }
 .placeholder-node.status-missing .node-badge, .placeholder-node.status-invalid .node-badge { border-color: #8a5f35; color: #efb36f; }
 .placeholder-node.status-dynamic .node-badge, .placeholder-node.status-external .node-badge { border-color: #72558f; color: #c8a4eb; }
 .placeholder-node.status-recursive .node-badge { border-color: #8b4f67; color: #e7a0bc; }
-.highlight-missing .placeholder-node.status-missing .node-tile, .highlight-missing .placeholder-card.status-missing { border-color: #ff9d4d; box-shadow: 0 0 0 3px rgba(255, 157, 77, .25), 0 0 22px rgba(255, 130, 55, .28); }
-.canvas-node.is-simulation-active .node-tile, .boundary-port.is-simulation-active { border-color: #f7df5a; box-shadow: 0 0 0 4px rgba(247, 223, 90, .25), 0 0 28px rgba(247, 223, 90, .5); }
+@keyframes missingDependencyPulse { 0%, 100% { box-shadow: 0 0 0 2px rgba(255, 183, 67, .32), 0 0 12px rgba(255, 144, 38, .35); } 50% { box-shadow: 0 0 0 6px rgba(255, 193, 75, .18), 0 0 34px rgba(255, 142, 31, .8); } }
+.highlight-missing .placeholder-node.status-missing .node-tile, .highlight-missing .placeholder-card.status-missing { border-color: #ffb43f; background-color: #3b2c20; animation: missingDependencyPulse 1.15s ease-in-out infinite; }
+.canvas-node.is-simulation-executed .node-tile { border-color: #58c9a1; box-shadow: 0 0 0 3px rgba(67, 205, 157, .2), 0 0 20px rgba(50, 190, 143, .25); }
+.canvas-node.is-simulation-active .node-tile, .boundary-port.is-simulation-active { border-color: #f7df5a; box-shadow: 0 0 0 4px rgba(247, 223, 90, .3), 0 0 30px rgba(247, 223, 90, .62); }
+.react-flow__edge.is-simulation-executed-edge .react-flow__edge-path { stroke: #54c9a0 !important; stroke-width: 3 !important; opacity: 1 !important; }
+.react-flow__edge.is-simulation-active-edge .react-flow__edge-path { stroke: #f7df5a !important; stroke-width: 4 !important; opacity: 1 !important; }
+.execution-count { position: absolute; z-index: 5; top: -10px; left: -9px; display: grid; min-width: 22px; height: 22px; padding: 0 5px; place-items: center; border: 2px solid #17171d; border-radius: 11px; color: #17130a; background: #f7df5a; font-size: 9px; font-weight: 800; }
 .canvas-node.is-checkpoint .node-tile { box-shadow: inset 0 0 0 3px #c084fc, 0 0 18px rgba(192, 132, 252, .32); }
 .canvas-node.is-start-node .node-tile { border-color: #39d98a; }
-.canvas-node.is-end-node .node-tile { border-color: #f06e78; }
-.canvas-node.is-branch-node .node-tile { box-shadow: inset 0 -3px #f1b45b; }
-.canvas-node.is-loop-node .node-tile { outline: 2px dashed #6fa8ff; outline-offset: 4px; }
-.canvas-node.is-boundary-entry .node-tile { border-color: #37d88a; box-shadow: 0 0 0 2px rgba(55, 216, 138, .22); }
-.canvas-node.is-boundary-exit .node-tile { border-color: #ef6673; box-shadow: 0 0 0 2px rgba(239, 102, 115, .22); }
-.canvas-node.is-boundary-entry.is-boundary-exit .node-tile { border-color: #37d88a; outline: 2px solid #ef6673; outline-offset: 3px; box-shadow: 0 0 0 2px rgba(55, 216, 138, .18); }
+.canvas-node.is-loop-node .node-tile { outline: 2px dashed var(--loop-color, #6fa8ff); outline-offset: 4px; }
+.loop-indicators { position: absolute; z-index: 5; top: -9px; right: -8px; display: flex; gap: 2px; }
+.loop-indicators b { display: grid; min-width: 19px; height: 19px; padding: 0 4px; place-items: center; border: 2px solid #17171d; border-radius: 10px; color: #111116; background: var(--loop-color); font-size: 8px; font-weight: 900; }
 .canvas-node .react-flow__handle { width: 12px; height: 12px; border-color: #29292c; }
 .handle-label { position: absolute; z-index: 1; color: #a8a8af; font-size: 9px; line-height: 1; pointer-events: none; transform: translateY(-50%); }
 .handle-label.input-label { left: 11px; }

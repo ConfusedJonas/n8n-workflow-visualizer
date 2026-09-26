@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { Download, Flag, FolderOpen, GitBranch, Info, Layers3, Network, Play, RefreshCw, Repeat2, Shuffle, Square, Upload, X } from 'lucide-react';
+import { Download, Flag, FolderOpen, Info, Layers3, Network, Play, RefreshCw, Repeat2, Shuffle, Square, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GraphCanvas, type GraphCanvasHandle } from './components/GraphCanvas';
 import { Sidebar } from './components/Sidebar';
@@ -7,7 +7,7 @@ import { parseN8nJson } from './n8n/parser';
 import type { NormalizedWorkflow, ParseDiagnostic } from './n8n/types';
 import { buildDependencyScene } from './renderers/dependencies/dependency';
 import { buildExpandedScene } from './renderers/expanded/expanded';
-import { analyzeSimulationGraph, buildSimulationPlan, checkpointsMayConflict, type SimulationMode } from './simulation/engine';
+import { analyzeSimulationGraph, buildSimulationSteps, checkpointsMayConflict, type SimulationMode, type SimulationStep } from './simulation/engine';
 import {
   clearAllLocalData,
   loadUiState,
@@ -50,13 +50,13 @@ export default function App() {
   const [simulationMode, setSimulationMode] = useState<SimulationMode>('random');
   const [simulationSpeed, setSimulationSpeed] = useState(700);
   const [checkpoints, setCheckpoints] = useState<Set<string>>(new Set());
-  const [simulationPlan, setSimulationPlan] = useState<string[]>([]);
+  const [simulationPlan, setSimulationPlan] = useState<SimulationStep[]>([]);
   const [simulationIndex, setSimulationIndex] = useState(0);
   const [simulationRunning, setSimulationRunning] = useState(false);
   const [repeatSimulation, setRepeatSimulation] = useState(false);
-  const [showStarts, setShowStarts] = useState(true);
-  const [showEnds, setShowEnds] = useState(true);
-  const [showBranches, setShowBranches] = useState(false);
+  const [executedCounts, setExecutedCounts] = useState<Map<string, number>>(new Map());
+  const [executedEdgeIds, setExecutedEdgeIds] = useState<Set<string>>(new Set());
+  const [showStarts, setShowStarts] = useState(false);
   const [showLoops, setShowLoops] = useState(false);
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [busy, setBusy] = useState(true);
@@ -96,6 +96,8 @@ export default function App() {
     setCheckpoints(new Set());
     setSimulationRunning(false);
     setSimulationPlan([]);
+    setExecutedCounts(new Map());
+    setExecutedEdgeIds(new Set());
   }, [effectiveKey]);
 
   const scene = useMemo(() => {
@@ -106,7 +108,12 @@ export default function App() {
 
   const simulationAnalysis = useMemo(() => analyzeSimulationGraph(scene), [scene]);
   const checkpointConflict = useMemo(() => checkpointsMayConflict(scene, checkpoints), [scene, checkpoints]);
-  const activeNodeId = simulationRunning ? simulationPlan[simulationIndex] : undefined;
+  const activeNodeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.nodeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
+  const activeEdgeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.edgeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
+  const displayStartIds = useMemo(() => new Set([
+    ...simulationAnalysis.starts,
+    ...scene.nodes.filter((node) => node.data.boundaryEntry).map((node) => node.id),
+  ]), [scene.nodes, simulationAnalysis.starts]);
 
   useEffect(() => {
     setCheckpoints((current) => {
@@ -123,16 +130,26 @@ export default function App() {
     }
     const timer = window.setTimeout(() => {
       if (simulationIndex + 1 < simulationPlan.length) {
-        setSimulationIndex((value) => value + 1);
+        const nextIndex = simulationIndex + 1;
+        const nextStep = simulationPlan[nextIndex];
+        setExecutedCounts((current) => {
+          const next = new Map(current);
+          nextStep.nodeIds.forEach((id) => next.set(id, (next.get(id) ?? 0) + 1));
+          return next;
+        });
+        setExecutedEdgeIds((current) => new Set([...current, ...nextStep.edgeIds]));
+        setSimulationIndex(nextIndex);
         return;
       }
       if (!repeatSimulation) {
         setSimulationRunning(false);
         return;
       }
-      const nextPlan = buildSimulationPlan(scene, simulationMode, checkpoints);
+      const nextPlan = buildSimulationSteps(scene, simulationMode, checkpoints);
       setSimulationPlan(nextPlan);
       setSimulationIndex(0);
+      setExecutedCounts(new Map(nextPlan[0]?.nodeIds.map((id) => [id, 1] as const) ?? []));
+      setExecutedEdgeIds(new Set(nextPlan[0]?.edgeIds ?? []));
       if (!nextPlan.length) setSimulationRunning(false);
     }, simulationSpeed);
     return () => window.clearTimeout(timer);
@@ -230,9 +247,11 @@ export default function App() {
   }, [view, simulationMode, simulationRunning, scene.nodes]);
 
   const startSimulation = useCallback(() => {
-    const plan = buildSimulationPlan(scene, simulationMode, checkpoints);
+    const plan = buildSimulationSteps(scene, simulationMode, checkpoints);
     setSimulationPlan(plan);
     setSimulationIndex(0);
+    setExecutedCounts(new Map(plan[0]?.nodeIds.map((id) => [id, 1] as const) ?? []));
+    setExecutedEdgeIds(new Set(plan[0]?.edgeIds ?? []));
     setSimulationRunning(Boolean(plan.length));
   }, [scene, simulationMode, checkpoints]);
 
@@ -310,11 +329,9 @@ export default function App() {
                 {simulationMode === 'custom' ? <span className="checkpoint-help">Click nodes to set checkpoints · {checkpoints.size} selected <button type="button" onClick={() => setCheckpoints(new Set())}>Clear</button></span> : <span className="checkpoint-help">Branches are chosen randomly.</span>}
               </div>
               <div className="simulation-overlays" aria-label="Simulation highlights">
-                <span>Show:</span>
-                <button type="button" aria-pressed={showStarts} className={showStarts ? 'is-active' : ''} onClick={() => setShowStarts((value) => !value)}>Starts</button>
-                <button type="button" aria-pressed={showEnds} className={showEnds ? 'is-active' : ''} onClick={() => setShowEnds((value) => !value)}>Possible ends</button>
-                <button type="button" aria-pressed={showBranches} className={showBranches ? 'is-active' : ''} onClick={() => setShowBranches((value) => !value)}><GitBranch size={12} /> Branches</button>
-                <button type="button" aria-pressed={showLoops} className={showLoops ? 'is-active' : ''} onClick={() => setShowLoops((value) => !value)}><Repeat2 size={12} /> Loops</button>
+                <span>Highlights:</span>
+                <button type="button" aria-pressed={showStarts} className={showStarts ? 'is-active' : ''} onClick={() => setShowStarts((value) => !value)}>Start nodes</button>
+                <button type="button" aria-pressed={showLoops} className={showLoops ? 'is-active' : ''} onClick={() => setShowLoops((value) => !value)}><Repeat2 size={12} /> Individual loops</button>
                 {checkpointConflict ? <span className="simulation-note">Some checkpoints conflict; one compatible branch will be chosen randomly.</span> : null}
               </div>
             </div>
@@ -324,15 +341,14 @@ export default function App() {
               onTogglePath={togglePath}
               onNodeActivate={toggleCheckpoint}
               highlightMissing={highlightMissing}
-              activeNodeId={activeNodeId}
+              activeNodeIds={activeNodeIds}
+              activeEdgeIds={activeEdgeIds}
+              executedCounts={executedCounts}
+              executedEdgeIds={executedEdgeIds}
               checkpointIds={checkpoints}
-              startIds={simulationAnalysis.starts}
-              endIds={simulationAnalysis.ends}
-              branchIds={simulationAnalysis.branches}
-              loopIds={simulationAnalysis.loops}
+              startIds={displayStartIds}
+              loopGroups={simulationAnalysis.loopGroups}
               showStarts={showStarts}
-              showEnds={showEnds}
-              showBranches={showBranches}
               showLoops={showLoops}
             />
             {exportError ? <div className="toast error"><Info size={16} />{exportError}<button onClick={() => setExportError(undefined)} aria-label="Dismiss"><X size={15} /></button></div> : null}
