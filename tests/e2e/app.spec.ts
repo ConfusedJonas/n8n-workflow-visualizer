@@ -16,7 +16,7 @@ test('imports peers independently, resolves a later child, switches views, colla
   ]);
   await expect(page.getByRole('dialog', { name: 'Import results' })).toContainText('1 accepted · 1 skipped');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
-  await expect(page.getByText('1 missing reference')).toBeVisible();
+  await expect(page.locator('.warning-link')).toContainText('1 missing dependency · Click to view');
   const nodeGeometry = await page.getByTestId('graph-stage').locator('.canvas-node').first().evaluate((node) => {
     const tile = getComputedStyle(node.querySelector('.node-tile')!);
     const footprint = getComputedStyle(node);
@@ -26,16 +26,39 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByTestId('graph-stage').locator('svg[aria-label="HTTP Request"]')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
-  await page.getByRole('button', { name: 'Dependency' }).click();
+  await page.getByText('Highlight missing').click();
+  await expect(page.getByTestId('graph-stage')).toHaveClass(/highlight-missing/);
+  await page.locator('.warning-link').click();
+  await expect(page.getByRole('button', { name: 'Dependency', exact: true })).toHaveClass(/is-active/);
   await expect(page.getByTestId('graph-stage').locator('.dependency-card')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.placeholder-card')).toHaveCount(1);
 
   await input.setInputFiles(example('synthetic-child.json'));
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByText('Content Operations', { exact: true }).first().click();
-  await page.getByRole('button', { name: 'Expanded' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
-  await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(2);
+  await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(4);
+  await expect(page.getByTestId('graph-stage').locator('.status-boundary-entry')).toHaveCount(1);
+  await expect(page.getByTestId('graph-stage').locator('.status-boundary-exit')).toHaveCount(1);
+  const boundaryBefore = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
+  const childBefore = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
+  if (!boundaryBefore || !childBefore) throw new Error('Expanded workflow geometry was unavailable.');
+  await page.mouse.move(boundaryBefore.x + 24, boundaryBefore.y + 22);
+  await page.mouse.down();
+  await page.mouse.move(boundaryBefore.x + 54, boundaryBefore.y + 42, { steps: 5 });
+  await page.mouse.up();
+  const boundaryAfter = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
+  const childAfter = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
+  if (!boundaryAfter || !childAfter) throw new Error('Moved workflow geometry was unavailable.');
+  expect(childAfter.x - childBefore.x).toBeCloseTo(boundaryAfter.x - boundaryBefore.x, 0);
+  expect(childAfter.y - childBefore.y).toBeCloseTo(boundaryAfter.y - boundaryBefore.y, 0);
+  await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
+  await page.waitForTimeout(250);
+  await page.getByTestId('graph-stage').locator('.workflow-boundary header').click();
+  await expect(page.getByTestId('graph-stage').locator('.status-collapsed')).toHaveCount(1);
+  await page.getByTestId('graph-stage').locator('.status-collapsed').click();
+  await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
   await page.getByRole('button', { name: 'Collapse all' }).click();
   await expect(page.getByTestId('graph-stage').locator('.status-collapsed')).toHaveCount(1);
   const collapsedGeometry = await page.getByTestId('graph-stage').locator('.status-collapsed').evaluate((node) => {
@@ -52,7 +75,9 @@ test('imports peers independently, resolves a later child, switches views, colla
 
   await page.reload();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
-  await expect(page.getByRole('button', { name: 'Expanded' })).toHaveClass(/is-active/);
+  await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveClass(/is-active/);
+  await expect(page.getByRole('button', { name: 'Reset view' })).toBeVisible();
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__minimap')).toHaveCount(0);
 });
 
 test('routes a backward loop around the node between its endpoints', async ({ page }) => {
@@ -70,8 +95,26 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   };
   await page.locator('input[type=file]').setInputFiles({ name: 'routing-loop.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(loop)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
-  await page.getByRole('button', { name: 'Original' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
+
+  const first = page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'First' });
+  const middle = page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Middle' });
+  const firstBefore = await first.boundingBox();
+  if (!firstBefore) throw new Error('First node geometry was unavailable.');
+  await page.mouse.move(firstBefore.x + firstBefore.width / 2, firstBefore.y + firstBefore.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(firstBefore.x + firstBefore.width / 2 + 60, firstBefore.y + firstBefore.height / 2 + 30, { steps: 5 });
+  await page.mouse.up();
+  const firstAfter = await first.boundingBox();
+  expect(firstAfter?.x).not.toBeCloseTo(firstBefore.x, 0);
+  await first.click();
+  await page.keyboard.down('Control');
+  await middle.click();
+  await page.keyboard.up('Control');
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__node.selected')).toHaveCount(2);
+  await page.getByRole('button', { name: 'Loops', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-loop-node')).toHaveCount(3);
 
   const crossesMiddle = await page.evaluate(() => {
     const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -103,10 +146,10 @@ test('centers a four-input Merge icon and aligns its outgoing handle', async ({ 
   };
   await page.locator('input[type=file]').setInputFiles({ name: 'aligned-merge.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedMerge)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
-  await page.getByRole('button', { name: 'Original' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aligned Merge');
   await expect(page.getByTestId('graph-stage').locator('.canvas-node')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Fit graph' }).click();
+  await page.getByRole('button', { name: 'Reset view' }).click();
 
   const geometry = await page.evaluate(() => {
     const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -145,10 +188,10 @@ test('aligns an IF true output with the exported successor position', async ({ p
   };
   await page.locator('input[type=file]').setInputFiles({ name: 'aligned-if.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(alignedIf)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
-  await page.getByRole('button', { name: 'Original' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Aligned IF');
   await expect(page.getByTestId('graph-stage').locator('.canvas-node')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Fit graph' }).click();
+  await page.getByRole('button', { name: 'Reset view' }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(2);
 
   const truePath = await page.evaluate(() => {
@@ -163,6 +206,20 @@ test('aligns an IF true output with the exported successor position', async ({ p
   });
   expect(truePath).not.toContain('Q');
   expect(truePath).not.toContain('C');
+
+  await page.getByRole('button', { name: 'Custom', exact: true }).click();
+  const trueNode = page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'True branch' });
+  const falseNode = page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'False branch' });
+  await trueNode.click();
+  await falseNode.click({ modifiers: ['Control'] });
+  await expect(page.getByTestId('graph-stage').locator('.is-checkpoint')).toHaveCount(2);
+  await expect(page.getByText('Some checkpoints conflict; one compatible branch will be chosen randomly.')).toBeVisible();
+  await page.getByRole('button', { name: 'Branches', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-branch-node')).toHaveCount(1);
+  await page.getByLabel('Speed').selectOption('250');
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Simulate', exact: true })).toBeVisible({ timeout: 3000 });
 });
 
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {
@@ -179,15 +236,15 @@ test('exports both formats and keeps sticky-note payloads inert without external
   };
   await page.locator('input[type=file]').setInputFiles({ name: 'hostile.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(hostile)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
-  await page.getByRole('button', { name: 'Original' }).click();
+  await page.getByRole('button', { name: 'View', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.sticky-note')).toContainText('Image blocked');
   expect(await page.evaluate(() => (window as typeof window & { __xss?: number }).__xss)).toBeUndefined();
   expect(externalRequests).toEqual([]);
 
   const png = page.waitForEvent('download');
   await page.getByRole('button', { name: 'PNG' }).click();
-  expect((await png).suggestedFilename()).toBe('safe-notes-original.png');
+  expect((await png).suggestedFilename()).toBe('safe-notes-view.png');
   const svg = page.waitForEvent('download');
   await page.getByRole('button', { name: 'SVG' }).click();
-  expect((await svg).suggestedFilename()).toBe('safe-notes-original.svg');
+  expect((await svg).suggestedFilename()).toBe('safe-notes-view.svg');
 });

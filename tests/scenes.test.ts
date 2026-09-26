@@ -102,7 +102,7 @@ describe('scene builders', () => {
     ];
     const once = shiftForExpansion(nodes, 'call', 500, 300);
     const twice = shiftForExpansion(once.nodes, 'call', 650, 300);
-    expect(once.nodes.find((item) => item.id === 'after')).toMatchObject({ x: 750, y: 100 });
+    expect(once.nodes.find((item) => item.id === 'after')).toMatchObject({ x: 820, y: 100 });
     expect(once.nodes.find((item) => item.id === 'above')).toMatchObject({ x: 0, y: -400 });
     expect(twice.nodes.find((item) => item.id === 'after')!.x).toBeGreaterThan(once.nodes.find((item) => item.id === 'after')!.x);
   });

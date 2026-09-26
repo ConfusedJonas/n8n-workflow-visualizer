@@ -8,6 +8,7 @@ import { shiftForExpansion } from './layout';
 interface Fragment extends GraphScene {
   entryId?: string;
   exitId?: string;
+  terminalIds: string[];
   ambiguousEntry: boolean;
   ambiguousExit: boolean;
 }
@@ -84,7 +85,7 @@ function hideInputTrigger(fragment: Fragment, workflow: NormalizedWorkflow, pref
     y: triggerScene.y + triggerScene.height / 2 - 14,
     width: 28,
     height: 28,
-    data: { label: 'Input' },
+    data: { label: 'Workflow input', status: 'entry', boundaryRole: 'entry' },
   });
   outgoing.forEach((edge, index) => {
     fragment.edges.push({ ...edge, id: `${entryId}:edge:${index}`, source: entryId, sourceHandle: 'out:main:0' });
@@ -94,7 +95,10 @@ function hideInputTrigger(fragment: Fragment, workflow: NormalizedWorkflow, pref
 
 function addExit(fragment: Fragment, prefix: string): Fragment {
   const terminals = terminalIds(fragment);
-  if (terminals.length === 1) return { ...fragment, exitId: terminals[0], ambiguousExit: false };
+  fragment.nodes = fragment.nodes.map((node) => terminals.includes(node.id)
+    ? { ...node, data: { ...node.data, boundaryRole: 'exit' } }
+    : node);
+  if (terminals.length === 1) return { ...fragment, exitId: terminals[0], terminalIds: terminals, ambiguousExit: false };
   const bounds = sceneBounds(fragment.nodes);
   const exitId = `${prefix}/result`;
   fragment.nodes.push({
@@ -104,9 +108,9 @@ function addExit(fragment: Fragment, prefix: string): Fragment {
     y: bounds.y + bounds.height / 2 - 18,
     width: 36,
     height: 36,
-    data: { label: 'Runtime result', status: 'runtime' },
+    data: { label: 'Possible result', status: 'exit', boundaryRole: 'exit' },
   });
-  return { ...fragment, exitId, ambiguousExit: true };
+  return { ...fragment, exitId, terminalIds: terminals, ambiguousExit: true };
 }
 
 function buildFragment(
@@ -119,7 +123,7 @@ function buildFragment(
   depth: number,
 ): Fragment {
   const workflow = workspace.workflows[workflowKey];
-  if (!workflow) return { nodes: [], edges: [], ambiguousEntry: true, ambiguousExit: true };
+  if (!workflow) return { nodes: [], edges: [], terminalIds: [], ambiguousEntry: true, ambiguousExit: true };
   const prefix = prefixForPath(path);
   let scene = buildOriginalScene(workflow, prefix);
   const references = [...workflow.subworkflowReferences].sort((a, b) => {
@@ -158,16 +162,16 @@ function buildFragment(
     childAncestors.add(targetKey);
     let child = buildFragment(workspace, targetKey, instancePath, childAncestors, options, true, depth + 1);
     const childBounds = sceneBounds(child.nodes);
-    const contentWidth = childBounds.width + 104;
-    const contentHeight = childBounds.height + 100;
-    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight);
+    const contentWidth = childBounds.width + 160;
+    const contentHeight = childBounds.height + 140;
+    const shifted = shiftForExpansion(scene.nodes, callId, contentWidth, contentHeight, 160);
     scene.nodes = shifted.nodes;
     const currentCall = scene.nodes.find((node) => node.id === callId)!;
     const boundaryX = currentCall.x;
     const boundaryY = currentCall.y - Math.max(0, (contentHeight - currentCall.height) / 2);
     const boundaryId = `${prefix}/boundary:${reference.nodeId}`;
     scene.nodes = scene.nodes.filter((node) => node.id !== callId);
-    scene.nodes.push({
+    const boundary: SceneNode = {
       id: boundaryId,
       kind: 'boundary',
       x: boundaryX,
@@ -181,27 +185,58 @@ function buildFragment(
         instancePath,
         nodeCount: workspace.workflows[targetKey].nodes.length,
       },
-    });
+    };
     child = {
       ...child,
-      ...translateScene(child, boundaryX + 52 - childBounds.x, boundaryY + 64 - childBounds.y),
+      ...translateScene(child, boundaryX + 80 - childBounds.x, boundaryY + 76 - childBounds.y),
     };
-    scene.nodes.push(...child.nodes);
-    scene.edges.push(...child.edges);
     const entryId = child.entryId ?? child.nodes.find((node) => node.kind !== 'boundary')?.id;
     const exitId = child.exitId ?? entryId;
+    const entryNode = child.nodes.find((node) => node.id === entryId);
+    const exitNode = child.nodes.find((node) => node.id === exitId);
+    const entryPortId = `${boundaryId}/input`;
+    const exitPortId = `${boundaryId}/output`;
+    const clampY = (value: number) => Math.max(boundaryY + 52, Math.min(boundaryY + contentHeight - 32, value));
+    const entryY = clampY((entryNode?.y ?? boundaryY + contentHeight / 2) + (entryNode?.height ?? 20) / 2) - 10;
+    const exitY = clampY((exitNode?.y ?? boundaryY + contentHeight / 2) + (exitNode?.height ?? 20) / 2) - 10;
+    const boundaryPorts: SceneNode[] = [
+      {
+        id: entryPortId,
+        kind: 'port',
+        x: boundaryX - 10,
+        y: entryY,
+        width: 20,
+        height: 20,
+        zIndex: 3,
+        data: { label: 'Input', status: 'boundary-entry', boundaryRole: 'entry' },
+      },
+      {
+        id: exitPortId,
+        kind: 'port',
+        x: boundaryX + contentWidth - 10,
+        y: exitY,
+        width: 20,
+        height: 20,
+        zIndex: 3,
+        data: { label: child.ambiguousExit ? 'Possible result' : 'Output', status: 'boundary-exit', boundaryRole: 'exit' },
+      },
+    ];
+    scene.nodes.push(boundary, ...child.nodes, ...boundaryPorts);
+    scene.edges.push(...child.edges);
     scene.edges = scene.edges.map((edge) => {
-      if (edge.target === callId && entryId) {
-        return { ...edge, target: entryId, targetHandle: 'in:main:0' };
+      if (edge.target === callId) {
+        return { ...edge, target: entryPortId, targetHandle: 'in:main:0' };
       }
-      if (edge.source === callId && exitId) {
-        return { ...edge, source: exitId, sourceHandle: 'out:main:0', label: child.ambiguousExit ? 'runtime result' : edge.label };
+      if (edge.source === callId) {
+        return { ...edge, source: exitPortId, sourceHandle: 'out:main:0', label: child.ambiguousExit ? 'runtime result' : edge.label };
       }
       return edge;
     });
+    if (entryId) scene.edges.push(makeSyntheticEdge(`${entryPortId}:inside`, entryPortId, entryId));
+    if (exitId) scene.edges.push(makeSyntheticEdge(`${exitPortId}:inside`, exitId, exitPortId));
   }
 
-  let fragment: Fragment = { ...scene, ambiguousEntry: false, ambiguousExit: false };
+  let fragment: Fragment = { ...scene, terminalIds: [], ambiguousEntry: false, ambiguousExit: false };
   if (hideTrigger) fragment = hideInputTrigger(fragment, workflow, prefix);
   if (hideTrigger) fragment = addExit(fragment, prefix);
   return fragment;

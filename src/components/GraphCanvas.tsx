@@ -1,14 +1,15 @@
 import {
   Background,
   BaseEdge,
+  ControlButton,
   Controls,
   Handle,
   MarkerType,
-  MiniMap,
   Position,
   ReactFlow,
   ReactFlowProvider,
   useNodes,
+  useNodesState,
   type Edge,
   type EdgeProps,
   type Node,
@@ -26,6 +27,7 @@ import {
   Layers3,
   ListTree,
   MousePointer2,
+  RotateCcw,
   SquarePen,
   Split,
   Workflow,
@@ -43,7 +45,7 @@ import {
   siPostgresql,
   type SimpleIcon,
 } from 'simple-icons';
-import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
@@ -70,6 +72,13 @@ interface CanvasNodeData extends Record<string, unknown> {
   inputLabels?: Record<string, string>;
   outputLabels?: Record<string, string>;
   onToggle?: (path: string) => void;
+  isSimulationActive?: boolean;
+  isCheckpoint?: boolean;
+  isStart?: boolean;
+  isEnd?: boolean;
+  isBranch?: boolean;
+  isLoop?: boolean;
+  boundaryRole?: string;
 }
 
 type CanvasNode = Node<CanvasNodeData>;
@@ -82,9 +91,35 @@ export interface GraphCanvasHandle {
 interface GraphCanvasProps {
   scene: GraphScene;
   onTogglePath?: (path: string) => void;
+  onNodeActivate?: (id: string) => void;
+  highlightMissing?: boolean;
+  activeNodeId?: string;
+  checkpointIds?: Set<string>;
+  startIds?: Set<string>;
+  endIds?: Set<string>;
+  branchIds?: Set<string>;
+  loopIds?: Set<string>;
+  showStarts?: boolean;
+  showEnds?: boolean;
+  showBranches?: boolean;
+  showLoops?: boolean;
 }
 
 const stickyColors = ['#fff0a6', '#a9d7ff', '#b8f2cf', '#ffc8df', '#d7c2ff', '#ffd1a8', '#b8efe9'];
+const EMPTY_IDS = new Set<string>();
+
+function stateClasses(data: CanvasNodeData): string {
+  return [
+    data.isSimulationActive ? 'is-simulation-active' : '',
+    data.isCheckpoint ? 'is-checkpoint' : '',
+    data.isStart ? 'is-start-node' : '',
+    data.isEnd ? 'is-end-node' : '',
+    data.isBranch ? 'is-branch-node' : '',
+    data.isLoop ? 'is-loop-node' : '',
+    data.boundaryRole === 'entry' ? 'is-boundary-entry' : '',
+    data.boundaryRole === 'exit' ? 'is-boundary-exit' : '',
+  ].filter(Boolean).join(' ');
+}
 
 function handleStyle(handle: string, handles: string[], mainOffsets?: number[]): React.CSSProperties {
   const [, type] = handle.split(':');
@@ -241,7 +276,7 @@ function WorkflowNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
   const style = { '--node-accent': appearance.color } as React.CSSProperties;
   return (
-    <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''}`} style={style}>
+    <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''} ${stateClasses(data)}`} style={style}>
       <div className={`node-tile shape-${appearance.shape}`}>
         <Handles data={data} />
         <span className="node-symbol">
@@ -308,7 +343,7 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
   const status = String(data.status ?? 'unknown');
   const style = { '--node-accent': appearance.color } as React.CSSProperties;
   return (
-    <div className={`canvas-node placeholder-node status-${status}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
+    <div className={`canvas-node placeholder-node status-${status} ${stateClasses(data)}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
       <div className={`node-tile shape-${appearance.shape}`}>
         <Handles data={data} />
         <span className="node-symbol"><AppearanceGlyph appearance={appearance} /></span>
@@ -317,21 +352,17 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
         <strong>{String(data.label ?? 'Unresolved workflow')}</strong>
         {data.detail ? <small>{String(data.detail)}</small> : null}
       </span>
-      {expandable ? (
-        <button className="node-badge is-action" type="button" onClick={() => data.onToggle?.(String(data.instancePath))}>Expand</button>
-      ) : <span className="node-badge">{status}</span>}
+      <span className="node-badge">{expandable ? 'Expand' : status}</span>
     </div>
   );
 }
 
 function BoundaryNode({ data }: NodeProps<CanvasNode>) {
   return (
-    <section className="workflow-boundary">
+    <section className="workflow-boundary" title="Click to collapse this sub-workflow">
       <header>
         <span><Layers3 size={16} /> {String(data.label ?? 'Sub-workflow')}</span>
-        {typeof data.instancePath === 'string' ? (
-          <button type="button" onClick={() => data.onToggle?.(String(data.instancePath))}>Collapse</button>
-        ) : null}
+        <small>Click background to collapse</small>
       </header>
     </section>
   );
@@ -339,7 +370,7 @@ function BoundaryNode({ data }: NodeProps<CanvasNode>) {
 
 function PortNode({ data }: NodeProps<CanvasNode>) {
   return (
-    <div className={`boundary-port status-${String(data.status ?? '')}`} title={String(data.label ?? '')}>
+    <div className={`boundary-port status-${String(data.status ?? '')} ${stateClasses(data)}`} title={String(data.label ?? '')}>
       <Handles data={data} />
       <span>{String(data.label ?? 'Port')}</span>
     </div>
@@ -372,11 +403,12 @@ interface RouteRect { left: number; right: number; top: number; bottom: number }
 function nodeRect(node: Node): RouteRect {
   const width = node.measured?.width ?? node.width ?? Number(node.style?.width ?? 0);
   const height = node.measured?.height ?? node.height ?? Number(node.style?.height ?? 0);
+  const clearance = 0;
   return {
-    left: node.position.x - 10,
-    right: node.position.x + width + 10,
-    top: node.position.y - 10,
-    bottom: node.position.y + height + 10,
+    left: node.position.x - clearance,
+    right: node.position.x + width + clearance,
+    top: node.position.y - clearance,
+    bottom: node.position.y + height + clearance,
   };
 }
 
@@ -451,6 +483,76 @@ function routeHits(points: RoutePoint[], obstacles: RouteRect[]): boolean {
   return points.slice(1).some((point, index) => obstacles.some((rect) => segmentHitsRect(points[index], point, rect)));
 }
 
+function gridRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteRect[], nearby: RouteRect[]): RoutePoint[] | undefined {
+  const xs = [...new Set([
+    source.x,
+    target.x,
+    Math.min(source.x, target.x) - 64,
+    Math.max(source.x, target.x) + 64,
+    ...nearby.flatMap((rect) => [rect.left, rect.right]),
+  ])].sort((left, right) => left - right);
+  const ys = [...new Set([
+    source.y,
+    target.y,
+    Math.min(source.y, target.y, ...nearby.map((rect) => rect.top)) - 24,
+    Math.max(source.y, target.y, ...nearby.map((rect) => rect.bottom)) + 24,
+    ...nearby.flatMap((rect) => [rect.top, rect.bottom]),
+  ])].sort((left, right) => left - right);
+  const sourceX = xs.indexOf(source.x);
+  const sourceY = ys.indexOf(source.y);
+  const targetX = xs.indexOf(target.x);
+  const targetY = ys.indexOf(target.y);
+  const insideObstacle = (point: RoutePoint) => obstacles.some((rect) => (
+    point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom
+  ));
+  type SearchState = { x: number; y: number; direction: number; score: number; estimate: number; key: string };
+  const keyFor = (x: number, y: number, direction: number) => `${x}:${y}:${direction}`;
+  const startKey = keyFor(sourceX, sourceY, -1);
+  const queue: SearchState[] = [{ x: sourceX, y: sourceY, direction: -1, score: 0, estimate: 0, key: startKey }];
+  const scores = new Map([[startKey, 0]]);
+  const previous = new Map<string, string>();
+  const states = new Map<string, SearchState>([[startKey, queue[0]]]);
+  const moves = [[-1, 0], [1, 0], [0, -1], [0, 1]] as const;
+  let finalKey: string | undefined;
+
+  while (queue.length) {
+    queue.sort((left, right) => left.estimate - right.estimate);
+    const current = queue.shift()!;
+    if (current.score !== scores.get(current.key)) continue;
+    if (current.x === targetX && current.y === targetY) {
+      finalKey = current.key;
+      break;
+    }
+    for (let direction = 0; direction < moves.length; direction += 1) {
+      const [dx, dy] = moves[direction];
+      const nextX = current.x + dx;
+      const nextY = current.y + dy;
+      if (nextX < 0 || nextX >= xs.length || nextY < 0 || nextY >= ys.length) continue;
+      const from = { x: xs[current.x], y: ys[current.y] };
+      const to = { x: xs[nextX], y: ys[nextY] };
+      if (insideObstacle(to) || routeHits([from, to], obstacles)) continue;
+      const distance = Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+      const turnCost = current.direction >= 0 && current.direction !== direction ? 16 : 0;
+      const score = current.score + distance + turnCost;
+      const key = keyFor(nextX, nextY, direction);
+      if (score >= (scores.get(key) ?? Number.POSITIVE_INFINITY)) continue;
+      const heuristic = Math.abs(to.x - target.x) + Math.abs(to.y - target.y);
+      const state = { x: nextX, y: nextY, direction, score, estimate: score + heuristic, key };
+      scores.set(key, score);
+      states.set(key, state);
+      previous.set(key, current.key);
+      queue.push(state);
+    }
+  }
+  if (!finalKey) return undefined;
+  const route: RoutePoint[] = [];
+  for (let key: string | undefined = finalKey; key; key = previous.get(key)) {
+    const state = states.get(key)!;
+    route.push({ x: xs[state.x], y: ys[state.y] });
+  }
+  return simplifyRoute(route.reverse());
+}
+
 function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteRect[]): RoutePoint[] {
   const gap = target.x - source.x;
   // Do not introduce a midpoint bend when exported geometry already aligns
@@ -473,22 +575,46 @@ function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: Rout
   const minX = Math.min(source.x, target.x);
   const maxX = Math.max(source.x, target.x);
   const relevant = obstacles.filter((rect) => rect.right > minX && rect.left < maxX);
+  // Backward and loop edges sometimes need to leave the source column before
+  // travelling around a stack of nodes. Include nearby columns so the router
+  // can choose an outside lane instead of falling back through the stack.
+  const routingObstacles = obstacles.filter((rect) => rect.right > minX - 240 && rect.left < maxX + 240);
   const sourceExitX = gap >= 0 ? source.x + Math.min(20, Math.max(4, gap / 3)) : source.x + 24;
   const targetEntryX = gap >= 0 ? target.x - Math.min(20, Math.max(4, gap / 3)) : target.x - 24;
-  const firstLane = Math.max(source.y, target.y) + 24;
-  const laneCandidates = [...new Set([firstLane, ...relevant.map((rect) => rect.bottom + 14).filter((lane) => lane >= firstLane)])].sort((left, right) => left - right);
-  for (const laneY of laneCandidates) {
-    const candidate = [
-      source,
-      { x: sourceExitX, y: source.y },
-      { x: sourceExitX, y: laneY },
-      { x: targetEntryX, y: laneY },
-      { x: targetEntryX, y: target.y },
-      target,
-    ];
-    if (!routeHits(candidate, obstacles)) return candidate;
+  const preferredY = (source.y + target.y) / 2;
+  const laneCandidates = [...new Set([
+    Math.min(source.y, target.y) - 24,
+    Math.max(source.y, target.y) + 24,
+    ...routingObstacles.flatMap((rect) => [rect.top - 14, rect.bottom + 14]),
+  ])].sort((left, right) => Math.abs(left - preferredY) - Math.abs(right - preferredY));
+  const xCandidates = [...new Set([
+    source.x,
+    target.x,
+    sourceExitX,
+    targetEntryX,
+    source.x - 48,
+    source.x + 48,
+    target.x - 48,
+    target.x + 48,
+    minX - 48,
+    maxX + 48,
+    ...routingObstacles.flatMap((rect) => [rect.left - 14, rect.right + 14]),
+  ])];
+  const nearSource = [...xCandidates].sort((left, right) => Math.abs(left - sourceExitX) - Math.abs(right - sourceExitX)).slice(0, 40);
+  const nearTarget = [...xCandidates].sort((left, right) => Math.abs(left - targetEntryX) - Math.abs(right - targetEntryX)).slice(0, 40);
+  for (const laneY of laneCandidates.slice(0, 60)) {
+    const clearSources = nearSource.filter((x) => !routeHits([source, { x, y: source.y }, { x, y: laneY }], obstacles));
+    const clearTargets = nearTarget.filter((x) => !routeHits([{ x, y: laneY }, { x, y: target.y }, target], obstacles));
+    const pairs = clearSources.flatMap((sourceX) => clearTargets.map((targetX) => ({ sourceX, targetX })))
+      .sort((left, right) => Math.abs(left.sourceX - left.targetX) - Math.abs(right.sourceX - right.targetX));
+    for (const { sourceX, targetX } of pairs) {
+      const candidate = [source, { x: sourceX, y: source.y }, { x: sourceX, y: laneY }, { x: targetX, y: laneY }, { x: targetX, y: target.y }, target];
+      if (!routeHits(candidate, obstacles)) return candidate;
+    }
   }
-  const fallbackLane = Math.max(firstLane, ...relevant.map((rect) => rect.bottom + 24));
+  const searched = gridRoute(source, target, obstacles, routingObstacles);
+  if (searched) return searched;
+  const fallbackLane = Math.max(source.y, target.y, ...relevant.map((rect) => rect.bottom)) + 24;
   return [source, { x: sourceExitX, y: source.y }, { x: sourceExitX, y: fallbackLane }, { x: targetEntryX, y: fallbackLane }, { x: targetEntryX, y: target.y }, target];
 }
 
@@ -530,7 +656,10 @@ function verticalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteR
 function N8nRoutedEdge(props: EdgeProps) {
   const allNodes = useNodes();
   const obstacles = allNodes
-    .filter((node) => node.type !== 'boundary' && node.id !== props.source && node.id !== props.target)
+    // Sticky notes and group boundaries are canvas annotations, not routing
+    // obstacles. Treating their large rectangles as solid made dense loop
+    // edges fall back through real nodes.
+    .filter((node) => node.type !== 'boundary' && node.type !== 'sticky' && node.id !== props.source && node.id !== props.target)
     .map(nodeRect);
   const fallback = getSmoothStepPath({
     sourceX: props.sourceX,
@@ -612,18 +741,94 @@ function handlesFor(sceneNode: SceneNode, scene: GraphScene) {
   return { inputHandles, outputHandles, inputLabels, outputLabels };
 }
 
-const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ scene, onTogglePath }, ref) => {
+const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
+  scene,
+  onTogglePath,
+  onNodeActivate,
+  highlightMissing = false,
+  activeNodeId,
+  checkpointIds = EMPTY_IDS,
+  startIds = EMPTY_IDS,
+  endIds = EMPTY_IDS,
+  branchIds = EMPTY_IDS,
+  loopIds = EMPTY_IDS,
+  showStarts = false,
+  showEnds = false,
+  showBranches = false,
+  showLoops = false,
+}, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
-  const nodes = useMemo<CanvasNode[]>(() => scene.nodes.map((node) => ({
+  const offsetsRef = useRef(new Map<string, { x: number; y: number }>());
+  const basePositionsRef = useRef(new Map<string, { x: number; y: number }>());
+  const boundaryDragRef = useRef<{ id: string; last: { x: number; y: number }; children: Set<string> }>();
+  const suppressClickUntilRef = useRef(0);
+  const preparedNodes = useMemo<CanvasNode[]>(() => scene.nodes.map((node) => {
+    basePositionsRef.current.set(node.id, { x: node.x, y: node.y });
+    const offset = offsetsRef.current.get(node.id) ?? { x: 0, y: 0 };
+    return {
     id: node.id,
     type: node.kind,
-    position: { x: node.x, y: node.y },
-    draggable: false,
-    selectable: node.kind !== 'boundary',
+    position: { x: node.x + offset.x, y: node.y + offset.y },
+    draggable: node.kind !== 'sticky',
+    selectable: true,
     style: { width: node.width, height: node.height, zIndex: node.zIndex },
-    data: { ...node.data, ...handlesFor(node, scene), onToggle: onTogglePath },
-  })), [scene, onTogglePath]);
+    data: {
+      ...node.data,
+      ...handlesFor(node, scene),
+      onToggle: onTogglePath,
+      isSimulationActive: node.id === activeNodeId,
+      isCheckpoint: checkpointIds.has(node.id),
+      isStart: showStarts && startIds.has(node.id),
+      isEnd: showEnds && endIds.has(node.id),
+      isBranch: showBranches && branchIds.has(node.id),
+      isLoop: showLoops && loopIds.has(node.id),
+    },
+  };
+  }), [scene, onTogglePath, activeNodeId, checkpointIds, startIds, endIds, branchIds, loopIds, showStarts, showEnds, showBranches, showLoops]);
+  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
+  useEffect(() => setNodes(preparedNodes), [preparedNodes, setNodes]);
+
+  const rememberPositions = useCallback((items: CanvasNode[]) => {
+    items.forEach((node) => {
+      const base = basePositionsRef.current.get(node.id);
+      if (base) offsetsRef.current.set(node.id, { x: node.position.x - base.x, y: node.position.y - base.y });
+    });
+  }, []);
+
+  const handleNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: CanvasNode) => {
+    if (node.type !== 'boundary') return;
+    const width = Number(node.style?.width ?? node.measured?.width ?? 0);
+    const height = Number(node.style?.height ?? node.measured?.height ?? 0);
+    const children = new Set(nodes.filter((candidate) => candidate.id !== node.id
+      && candidate.position.x >= node.position.x
+      && candidate.position.y >= node.position.y
+      && candidate.position.x + Number(candidate.style?.width ?? candidate.measured?.width ?? 0) <= node.position.x + width
+      && candidate.position.y + Number(candidate.style?.height ?? candidate.measured?.height ?? 0) <= node.position.y + height).map((candidate) => candidate.id));
+    boundaryDragRef.current = { id: node.id, last: { ...node.position }, children };
+  }, [nodes]);
+
+  const handleNodeDrag = useCallback((_event: MouseEvent | TouchEvent, node: CanvasNode) => {
+    const group = boundaryDragRef.current;
+    if (!group || group.id !== node.id) return;
+    const dx = node.position.x - group.last.x;
+    const dy = node.position.y - group.last.y;
+    if (!dx && !dy) return;
+    setNodes((current) => {
+      const moved = current.map((candidate) => group.children.has(candidate.id)
+        ? { ...candidate, position: { x: candidate.position.x + dx, y: candidate.position.y + dy } }
+        : candidate);
+      rememberPositions(moved.filter((candidate) => group.children.has(candidate.id)));
+      return moved;
+    });
+    group.last = { ...node.position };
+  }, [rememberPositions, setNodes]);
+
+  const handleNodeDragStop = useCallback(() => {
+    rememberPositions(nodes);
+    boundaryDragRef.current = undefined;
+    suppressClickUntilRef.current = Date.now() + 220;
+  }, [nodes, rememberPositions]);
   const edges = useMemo<Edge[]>(() => scene.edges.map((edge) => ({
     id: edge.id,
     source: edge.source,
@@ -647,16 +852,31 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ scen
   }), [instance]);
 
   return (
-    <div className="graph-stage" ref={stageRef} data-testid="graph-stage">
+    <div className={`graph-stage ${highlightMissing ? 'highlight-missing' : ''}`} ref={stageRef} data-testid="graph-stage">
       <ReactFlow
           nodes={nodes}
           edges={edges}
+          onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onInit={setInstance}
-          nodesDraggable={false}
+          onNodeDragStart={handleNodeDragStart}
+          onNodeDrag={handleNodeDrag}
+          onNodeDragStop={handleNodeDragStop}
+          onNodeClick={(_event, node) => {
+            if (Date.now() < suppressClickUntilRef.current) return;
+            if (typeof node.data.instancePath === 'string' && (node.type === 'boundary' || node.data.status === 'collapsed')) {
+              onTogglePath?.(node.data.instancePath);
+              return;
+            }
+            onNodeActivate?.(node.id);
+          }}
+          nodesDraggable
           nodesConnectable={false}
           elementsSelectable
+          selectionOnDrag
+          panOnDrag={[1, 2]}
+          multiSelectionKeyCode="Control"
           fitView
           fitViewOptions={{ padding: 0.12, minZoom: 0.02 }}
           minZoom={0.02}
@@ -665,8 +885,11 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({ scen
           proOptions={{ hideAttribution: false }}
       >
         <Background color="#303034" gap={16} size={1} />
-        <MiniMap pannable zoomable nodeColor={(node) => node.type === 'sticky' ? '#786f3d' : node.type === 'boundary' ? '#2d2940' : '#5b5c68'} />
-        <Controls showInteractive={false} />
+        <Controls showInteractive={false} showFitView={false}>
+          <ControlButton title="Reset view" aria-label="Reset view" onClick={() => instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 })}>
+            <RotateCcw size={15} />
+          </ControlButton>
+        </Controls>
       </ReactFlow>
     </div>
   );

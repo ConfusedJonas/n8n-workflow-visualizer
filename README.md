@@ -1,6 +1,6 @@
 # n8n Workflow Visualizer
 
-A private-by-default, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect their exact exported layout, map parent/child dependencies, or expand static sub-workflow calls inline.
+A private-by-default, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect and rearrange their exported layout, map parent/child dependencies, expand static sub-workflow calls inline, or animate a graph-only execution simulation.
 
 ![Expanded synthetic workflow family](docs/assets/readme.png)
 
@@ -10,10 +10,12 @@ A private-by-default, browser-only visualizer for n8n workflow JSON exports. Imp
 - Preserves arbitrary connection types, sparse/multiple outputs, target input indexes, unknown future node types, sticky notes, and disabled nodes.
 - Resolves imported sub-workflows by exported workflow ID, including legacy strings and current resource-locator values.
 - Represents dynamic, missing, embedded, deprecated local-file/URL, invalid, disabled, and recursive references explicitly.
-- Offers three read-only views:
-  - **Original** — exported n8n positions, full-size type-specific tiles/icons, dynamic multi-input nodes, and all socket types.
-  - **Dependency** — deterministic Dagre layout for the selected workflow family.
-  - **Expanded** — nested boundaries with trigger fan-out and conservative result routing.
+- Offers two focused views:
+  - **View** — exported n8n positions with expandable nested boundaries, type-specific tiles/icons, dynamic multi-input nodes, all socket types, drag/multi-select, and conservative result routing.
+  - **Dependency** — deterministic Dagre layout for the selected workflow family, including clickable missing-dependency warnings.
+- Connects external edges to expanded workflow boundaries, with green entry and red possible-exit markers inside each boundary.
+- Simulates graph traversal without executing node logic. Random mode chooses branches; Custom mode routes toward selectable checkpoints and explains conflicting choices. Loops are bounded to one repeat.
+- Highlights missing calls, start nodes, possible end nodes, branches, and loops on demand.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
 - Routes orthogonal connections around node bodies while retaining every exported output and input index.
@@ -52,7 +54,7 @@ Duplicate exported IDs replace the stored workflow; the last match in an import 
 
 Only static imported database IDs and literal embedded workflows expand. Expressions are never evaluated or name-matched. File and URL source modes stay inert external placeholders.
 
-Expanded mode hides exactly one enabled Execute Sub-workflow Trigger and preserves all of its outgoing branches. If the trigger is missing, disabled, or ambiguous, the boundary shows a warning. Multiple possible terminal nodes use a labelled runtime-result port instead of fabricated execution edges.
+An expanded workflow hides exactly one enabled Execute Sub-workflow Trigger and preserves all of its outgoing branches. If the trigger is missing, disabled, or ambiguous, the boundary shows a warning. Multiple possible terminal nodes use a labelled runtime-result port instead of fabricated execution edges. Outside connections terminate at the workflow boundary so internal branches remain readable.
 
 ## GitHub Pages
 
@@ -66,7 +68,7 @@ The Vite base path is derived from `GITHUB_REPOSITORY`, so a repository rename i
 
 ## Scope
 
-V1 does not support `.n8np` archives, workflow editing, node inspectors, manual mapping for dynamic references, external workflow lookup, or workflow execution.
+V1 does not support `.n8np` archives, changing workflow definitions, node inspectors, manual mapping for dynamic references, external workflow lookup, or real workflow execution. Dragged positions are viewer-only and are not written back to imported JSON.
 
 ## License
 

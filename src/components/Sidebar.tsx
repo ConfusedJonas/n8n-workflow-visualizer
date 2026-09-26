@@ -7,9 +7,10 @@ interface SidebarProps {
   onSelect(key: string): void;
   onRemove(key: string): void;
   onClear(): void;
+  onViewMissing(): void;
 }
 
-export function Sidebar({ workspace, selectedKey, onSelect, onRemove, onClear }: SidebarProps) {
+export function Sidebar({ workspace, selectedKey, onSelect, onRemove, onClear, onViewMissing }: SidebarProps) {
   return (
     <aside className="sidebar">
       <div className="brand"><span><Workflow size={22} /></span><div><strong>n8n Visualizer</strong><small>Local workflow maps</small></div></div>
@@ -32,7 +33,7 @@ export function Sidebar({ workspace, selectedKey, onSelect, onRemove, onClear }:
                   </div>
                 );
               })}
-              {family.missingTargetIds.length ? <p className="family-warning">{family.missingTargetIds.length} unresolved workflow {family.missingTargetIds.length === 1 ? 'ID' : 'IDs'}</p> : null}
+              {family.missingTargetIds.length ? <button type="button" className="family-warning" onClick={onViewMissing}>{family.missingTargetIds.length} missing dependenc{family.missingTargetIds.length === 1 ? 'y' : 'ies'} · Click to view</button> : null}
             </section>
           );
         })}

@@ -13,7 +13,7 @@ export function shiftForExpansion(
   anchorId: string,
   expansionWidth: number,
   expansionHeight: number,
-  gap = 90,
+  gap = 160,
 ): ExpansionShiftResult {
   const anchor = nodes.find((node) => node.id === anchorId);
   if (!anchor) return { nodes, delta: 0 };
