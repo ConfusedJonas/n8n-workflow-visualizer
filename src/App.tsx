@@ -108,7 +108,10 @@ export default function App() {
   const activeNodeId = simulationRunning ? simulationPlan[simulationIndex] : undefined;
 
   useEffect(() => {
-    setCheckpoints((current) => new Set([...current].filter((id) => scene.nodes.some((node) => node.id === id))));
+    setCheckpoints((current) => {
+      const retained = [...current].filter((id) => scene.nodes.some((node) => node.id === id));
+      return retained.length === current.size ? current : new Set(retained);
+    });
   }, [scene]);
 
   useEffect(() => {

@@ -15,6 +15,7 @@ test('imports peers independently, resolves a later child, switches views, colla
     { name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{broken') },
   ]);
   await expect(page.getByRole('dialog', { name: 'Import results' })).toContainText('1 accepted · 1 skipped');
+  await page.getByRole('button', { name: 'Close import results' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
   await expect(page.locator('.warning-link')).toContainText('1 missing dependency · Click to view');
   const nodeGeometry = await page.getByTestId('graph-stage').locator('.canvas-node').first().evaluate((node) => {
@@ -24,6 +25,7 @@ test('imports peers independently, resolves a later child, switches views, colla
   });
   expect(nodeGeometry).toEqual({ footprintWidth: '100px', footprintHeight: '80px', tileWidth: '100px', tileHeight: '80px' });
   await expect(page.getByTestId('graph-stage').locator('svg[aria-label="HTTP Request"]')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Reset view' }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge')).toHaveCount(3);
 
   await page.getByText('Highlight missing').click();
@@ -96,6 +98,7 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   await page.locator('input[type=file]').setInputFiles({ name: 'routing-loop.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(loop)) });
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByRole('button', { name: 'View', exact: true }).click();
+  await page.getByRole('button', { name: 'Reset view' }).click();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__edge-path[d]')).toHaveCount(3);
 
   const first = page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'First' });

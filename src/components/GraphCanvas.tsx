@@ -10,6 +10,7 @@ import {
   ReactFlowProvider,
   useNodes,
   useNodesState,
+  useUpdateNodeInternals,
   type Edge,
   type EdgeProps,
   type Node,
@@ -759,6 +760,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
 }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
+  const updateNodeInternals = useUpdateNodeInternals();
   const offsetsRef = useRef(new Map<string, { x: number; y: number }>());
   const basePositionsRef = useRef(new Map<string, { x: number; y: number }>());
   const boundaryDragRef = useRef<{ id: string; last: { x: number; y: number }; children: Set<string> }>();
@@ -787,7 +789,22 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(({
   };
   }), [scene, onTogglePath, activeNodeId, checkpointIds, startIds, endIds, branchIds, loopIds, showStarts, showEnds, showBranches, showLoops]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
-  useEffect(() => setNodes(preparedNodes), [preparedNodes, setNodes]);
+  useEffect(() => {
+    setNodes((current) => {
+      const existing = new Map(current.map((node) => [node.id, node]));
+      return preparedNodes.map((node) => {
+        const previous = existing.get(node.id);
+        if (!previous) return node;
+        // Preserve React Flow's asynchronous measurements when visual state
+        // changes. Replacing a measured node with a fresh object can strand its
+        // edges until ResizeObserver fires again (not guaranteed when the size
+        // itself did not change).
+        return { ...node, measured: previous.measured, selected: previous.selected };
+      });
+    });
+    const frame = window.requestAnimationFrame(() => updateNodeInternals(preparedNodes.map((node) => node.id)));
+    return () => window.cancelAnimationFrame(frame);
+  }, [preparedNodes, setNodes, updateNodeInternals]);
 
   const rememberPositions = useCallback((items: CanvasNode[]) => {
     items.forEach((node) => {
