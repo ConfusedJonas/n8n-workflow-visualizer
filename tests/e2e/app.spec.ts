@@ -34,6 +34,12 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByRole('button', { name: 'Dependency', exact: true })).toHaveClass(/is-active/);
   await expect(page.getByTestId('graph-stage').locator('.dependency-card')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.placeholder-card')).toHaveCount(1);
+  const dependencyInView = await page.getByTestId('graph-stage').locator('.dependency-card').evaluate((card, stage) => {
+    const cardRect = card.getBoundingClientRect();
+    const stageRect = (stage as HTMLElement).getBoundingClientRect();
+    return cardRect.left >= stageRect.left && cardRect.right <= stageRect.right && cardRect.top >= stageRect.top && cardRect.bottom <= stageRect.bottom;
+  }, await page.getByTestId('graph-stage').elementHandle());
+  expect(dependencyInView).toBe(true);
 
   await input.setInputFiles(example('synthetic-child.json'));
   await page.getByRole('button', { name: 'Close import results' }).click();
@@ -46,6 +52,22 @@ test('imports peers independently, resolves a later child, switches views, colla
   await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-start-node')).toHaveCount(3);
   await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
+  const outputCrossesBoundary = await page.evaluate(() => {
+    const boundary = document.querySelector('.react-flow__node-boundary')!;
+    const boundaryId = boundary.getAttribute('data-id');
+    const route = [...document.querySelectorAll('[data-route-source]')].find((candidate) => candidate.getAttribute('data-route-source') === boundaryId)!;
+    const path = route.querySelector('.react-flow__edge-path') as SVGPathElement;
+    const rect = boundary.getBoundingClientRect();
+    const matrix = path.getScreenCTM()!;
+    const length = path.getTotalLength();
+    for (let step = 3; step < 100; step += 1) {
+      const point = path.getPointAtLength((length * step) / 100);
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+      if (screen.x > rect.left + 2 && screen.x < rect.right - 2 && screen.y > rect.top + 2 && screen.y < rect.bottom - 2) return true;
+    }
+    return false;
+  });
+  expect(outputCrossesBoundary).toBe(false);
   const boundaryBefore = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
   const childBefore = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
   if (!boundaryBefore || !childBefore) throw new Error('Expanded workflow geometry was unavailable.');

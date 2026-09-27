@@ -61,7 +61,7 @@ interface CanvasNodeData extends Record<string, unknown> {
   outputCount?: number;
   disabled?: boolean;
   content?: string;
-  color?: number;
+  color?: number | string;
   status?: string;
   nodeCount?: number;
   missingCount?: number;
@@ -110,7 +110,15 @@ interface GraphCanvasProps {
   showLoops?: boolean;
 }
 
-const stickyColors = ['#fff0a6', '#a9d7ff', '#b8f2cf', '#ffc8df', '#d7c2ff', '#ffd1a8', '#b8efe9'];
+const stickyColors: Record<number, { background: string; border: string }> = {
+  1: { background: '#554c08', border: '#81761b' },
+  2: { background: '#5a3d08', border: '#93691a' },
+  3: { background: '#5b1016', border: '#8b2028' },
+  4: { background: '#073e26', border: '#14683f' },
+  5: { background: '#12395f', border: '#245d91' },
+  6: { background: '#341566', border: '#583092' },
+  7: { background: '#29292e', border: '#484850' },
+};
 const EMPTY_IDS = new Set<string>();
 const EMPTY_COUNTS = new Map<string, number>();
 
@@ -327,9 +335,12 @@ function safeHref(href?: string): string | undefined {
 }
 
 function StickyNode({ data }: NodeProps<CanvasNode>) {
-  const color = stickyColors[Math.abs(Number(data.color ?? 0)) % stickyColors.length];
+  const custom = typeof data.color === 'string' && /^#[0-9a-f]{6}$/i.test(data.color) ? data.color : undefined;
+  const preset = stickyColors[Math.min(7, Math.max(1, Math.floor(Number(data.color) || 1)))] ?? stickyColors[1];
+  const background = custom ?? preset.background;
+  const border = custom ? `color-mix(in srgb, ${custom} 72%, white)` : preset.border;
   return (
-    <article className="sticky-note" style={{ background: color }}>
+    <article className="sticky-note" style={{ background, borderColor: border, color: '#f2eff5' }}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeSanitize]}
@@ -426,10 +437,10 @@ interface RoutePoint { x: number; y: number }
 
 interface RouteRect { left: number; right: number; top: number; bottom: number }
 
-function nodeRect(node: Node): RouteRect {
+function nodeRect(node: Node, clearanceOverride?: number): RouteRect {
   const width = node.measured?.width ?? node.width ?? Number(node.style?.width ?? 0);
   const height = node.measured?.height ?? node.height ?? Number(node.style?.height ?? 0);
-  const clearance = node.type === 'boundary' ? 24 : 0;
+  const clearance = clearanceOverride ?? (node.type === 'boundary' ? 24 : 0);
   return {
     left: node.position.x - clearance,
     right: node.position.x + width + clearance,
@@ -683,18 +694,19 @@ function N8nRoutedEdge(props: EdgeProps) {
   const allNodes = useNodes();
   const source = { x: props.sourceX, y: props.sourceY };
   const target = { x: props.targetX, y: props.targetY };
-  const obstacles = allNodes
-    .filter((node) => node.type !== 'sticky' && node.id !== props.source && node.id !== props.target)
-    // A boundary that contains both endpoints is their parent group, not an
-    // obstacle. Other expanded workflow boxes must remain solid so outside
-    // connections route around them instead of cutting through their content.
-    .filter((node) => {
-      if (node.type !== 'boundary') return true;
-      const rect = nodeRect(node);
+  const obstacles = allNodes.flatMap((node) => {
+    if (node.type === 'sticky') return [];
+    const endpoint = node.id === props.source || node.id === props.target;
+    if (endpoint && node.type !== 'boundary') return [];
+    // Endpoint boundaries use their actual rectangle so an edge can start or
+    // finish exactly on its side, but cannot turn back through the box.
+    const rect = nodeRect(node, endpoint ? 0 : undefined);
+    if (node.type === 'boundary' && !endpoint) {
       const contains = (point: RoutePoint) => point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom;
-      return !(contains(source) && contains(target));
-    })
-    .map(nodeRect);
+      if (contains(source) && contains(target)) return [];
+    }
+    return [rect];
+  });
   const fallback = getSmoothStepPath({
     sourceX: props.sourceX,
     sourceY: props.sourceY,
@@ -858,6 +870,20 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     const frame = window.requestAnimationFrame(() => updateNodeInternals(preparedNodes.map((node) => node.id)));
     return () => window.cancelAnimationFrame(frame);
   }, [preparedNodes, setNodes, updateNodeInternals]);
+
+  useEffect(() => {
+    if (!instance) return undefined;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        void instance.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 });
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (secondFrame) window.cancelAnimationFrame(secondFrame);
+    };
+  }, [instance, scene]);
 
   const rememberPositions = useCallback((items: CanvasNode[]) => {
     items.forEach((node) => {

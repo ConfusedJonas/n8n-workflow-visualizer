@@ -10,8 +10,15 @@ import type {
   WorkflowNode,
 } from './types';
 
-export const PARSER_VERSION = 1;
+export const PARSER_VERSION = 2;
 const STICKY_NOTE_TYPE = 'n8n-nodes-base.stickyNote';
+
+function stickyColor(value: unknown): number | string {
+  const numeric = finiteNumber(value);
+  if (numeric !== undefined) return numeric;
+  if (typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value.trim())) return value.trim();
+  return 1;
+}
 const EXECUTE_WORKFLOW_TYPE = 'n8n-nodes-base.executeWorkflow';
 
 function isRecord(value: unknown): value is JsonRecord {
@@ -116,7 +123,7 @@ function normalizeNode(
       position,
       width: finiteNumber(parameters.width) ?? 240,
       height: finiteNumber(parameters.height) ?? 160,
-      color: finiteNumber(parameters.color) ?? 1,
+      color: stickyColor(parameters.color),
       content: typeof parameters.content === 'string' ? parameters.content : '',
       raw,
     };

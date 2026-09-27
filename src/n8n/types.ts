@@ -45,7 +45,7 @@ export interface StickyNote {
   position: Point;
   width: number;
   height: number;
-  color: number;
+  color: number | string;
   content: string;
   raw: JsonRecord;
 }

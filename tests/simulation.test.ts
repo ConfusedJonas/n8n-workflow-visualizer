@@ -36,7 +36,7 @@ describe('workflow simulation', () => {
     expect(plan).toEqual(['start', 'branch', 'loop', 'branch', 'end']);
   });
 
-  it('runs each distinct loop path once, exits, and reaches an outside checkpoint', () => {
+  it('uses the shortest untried branch toward an outside checkpoint', () => {
     const scene: GraphScene = {
       nodes: ['start', 'gate', 'split', 'left', 'right', 'checkpoint', 'end'].map(node),
       edges: [
@@ -51,7 +51,31 @@ describe('workflow simulation', () => {
       ],
     };
     const plan = buildSimulationPlan(scene, 'custom', new Set(['checkpoint']), () => 0);
-    expect(plan).toEqual(['start', 'gate', 'split', 'left', 'gate', 'split', 'right', 'gate', 'checkpoint', 'end']);
+    expect(plan).toEqual(['start', 'gate', 'checkpoint', 'end']);
+  });
+
+  it('runs each parallel loop output at most once, merges once, and reaches the checkpoint', () => {
+    const nodeIds = ['start', 'merge', 'checkpoint'];
+    const edges = [edge('start-fan', 'start', 'loop-1')];
+    for (let index = 1; index <= 4; index += 1) {
+      nodeIds.push(`loop-${index}`, `body-${index}`, `done-${index}`);
+      if (index > 1) edges.push(edge(`start-fan-${index}`, 'start', `loop-${index}`));
+      edges.push(
+        edge(`exit-${index}`, `loop-${index}`, `done-${index}`, 0),
+        edge(`body-edge-${index}`, `loop-${index}`, `body-${index}`, 1),
+        edge(`return-${index}`, `body-${index}`, `loop-${index}`),
+        edge(`merge-${index}`, `done-${index}`, 'merge'),
+      );
+    }
+    edges.push(edge('finish', 'merge', 'checkpoint'));
+    const steps = buildSimulationSteps({ nodes: nodeIds.map(node), edges }, 'random', new Set(), () => 0.99);
+    const plan = steps.flatMap((step) => step.nodeIds);
+    expect(plan.at(-1)).toBe('checkpoint');
+    expect(plan.filter((id) => id === 'merge')).toHaveLength(1);
+    for (let index = 1; index <= 4; index += 1) {
+      expect(plan.filter((id) => id === `loop-${index}`).length).toBeLessThanOrEqual(2);
+      expect(plan).toContain(`done-${index}`);
+    }
   });
 
   it('runs fan-out nodes together and waits for every live branch at a merge', () => {

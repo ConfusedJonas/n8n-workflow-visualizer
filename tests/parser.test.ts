@@ -83,9 +83,11 @@ describe('parseN8nDocument', () => {
   it('retains sticky notes separately and applies documented defaults', () => {
     const parsed = parseN8nDocument(workflow('sticky', 'Sticky', [
       node('Note', 'note', [13, 17], 'n8n-nodes-base.stickyNote', { content: '# Safe', color: 4 }),
+      node('Custom Note', 'custom-note', [300, 17], 'n8n-nodes-base.stickyNote', { color: '#A25100' }),
     ])).workflows[0];
     expect(parsed.nodes).toHaveLength(0);
     expect(parsed.stickyNotes[0]).toMatchObject({ width: 240, height: 160, color: 4, content: '# Safe' });
+    expect(parsed.stickyNotes[1].color).toBe('#A25100');
   });
 
   it.each(['workflowInputs', 'jsonExample', 'passthrough'])('preserves Execute Workflow Trigger input mode %s', (inputSource) => {

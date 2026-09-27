@@ -168,46 +168,84 @@ function groupedOutputs(edges: SceneEdge[]): SceneEdge[][] {
   return [...groups.entries()].sort(([left], [right]) => left - right).map(([, group]) => group);
 }
 
-function cycleSignaturesForGroup(start: string, group: SceneEdge[], outgoing: Map<string, SceneEdge[]>, component: Set<string>, limit = 128): Set<string> {
-  const signatures = new Set<string>();
-  let traversals = 0;
-  const walk = (id: string, path: string[], seen: Set<string>) => {
-    traversals += 1;
-    if (signatures.size >= limit || traversals > limit * 100) return;
-    if (id === start) {
-      signatures.add(cycleSignature(path));
-      return;
-    }
-    if (!component.has(id) || seen.has(id)) return;
-    const nextSeen = new Set(seen).add(id);
-    const nextPath = [...path, id];
-    for (const edge of outgoing.get(id) ?? []) walk(edge.target, nextPath, nextSeen);
-  };
-  group.forEach((edge) => walk(edge.target, [start], new Set([start])));
-  return signatures;
-}
-
-function canEscapeWithoutReturning(start: string, group: SceneEdge[], outgoing: Map<string, SceneEdge[]>, component: Set<string>): boolean {
-  const seen = new Set([start]);
-  const queue = group.map((edge) => edge.target);
+function shortestDistance(starts: string[], targets: Set<string>, outgoing: Map<string, SceneEdge[]>, blockedNode?: string): number {
+  if (!targets.size) return Number.POSITIVE_INFINITY;
+  const queue = starts.map((id) => ({ id, distance: 0 }));
+  const seen = new Set<string>();
   while (queue.length) {
-    const id = queue.shift()!;
-    if (!component.has(id)) return true;
-    if (seen.has(id)) continue;
-    seen.add(id);
-    (outgoing.get(id) ?? []).forEach((edge) => queue.push(edge.target));
+    const current = queue.shift()!;
+    if (seen.has(current.id)) continue;
+    seen.add(current.id);
+    if (targets.has(current.id)) return current.distance;
+    if (current.id === blockedNode) continue;
+    (outgoing.get(current.id) ?? []).forEach((edge) => queue.push({ id: edge.target, distance: current.distance + 1 }));
   }
-  return false;
+  return Number.POSITIVE_INFINITY;
 }
 
-function checkpointGuidedGroups(groups: SceneEdge[][], outgoing: Map<string, SceneEdge[]>, remaining: Set<string>): SceneEdge[][] {
-  if (!remaining.size || groups.length < 2) return groups;
-  const scored = groups.map((group) => ({
-    group,
-    score: new Set(group.flatMap((edge) => [...reachableCheckpoints(edge.target, outgoing, remaining)])).size,
-  }));
-  const best = Math.max(...scored.map((item) => item.score));
-  return best > 0 ? scored.filter((item) => item.score === best).map((item) => item.group) : groups;
+function untriedBranchDistance(
+  group: SceneEdge[],
+  outgoing: Map<string, SceneEdge[]>,
+  usedOutputs: Map<string, Set<number>>,
+  blockedNode?: string,
+): number {
+  const queue = group.map((edge) => ({ id: edge.target, distance: 0 }));
+  const seen = new Set<string>();
+  while (queue.length) {
+    const current = queue.shift()!;
+    if (seen.has(current.id)) continue;
+    seen.add(current.id);
+    const outputs = groupedOutputs(outgoing.get(current.id) ?? []);
+    if (outputs.length > 1) {
+      const used = usedOutputs.get(current.id) ?? new Set<number>();
+      if (outputs.some((candidate) => !used.has(candidate[0].outputIndex))) return current.distance;
+    }
+    if (current.id === blockedNode) continue;
+    (outgoing.get(current.id) ?? []).forEach((edge) => queue.push({ id: edge.target, distance: current.distance + 1 }));
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function selectOutputGroup(
+  nodeId: string,
+  groups: SceneEdge[][],
+  outgoing: Map<string, SceneEdge[]>,
+  usedOutputs: Map<string, Set<number>>,
+  remaining: Set<string>,
+  mode: SimulationMode,
+  random: () => number,
+): SceneEdge[] | undefined {
+  if (!groups.length) return undefined;
+  if (groups.length === 1) return groups[0];
+
+  const used = usedOutputs.get(nodeId) ?? new Set<number>();
+  const fresh = groups.filter((group) => !used.has(group[0].outputIndex));
+  let candidates = fresh;
+
+  // Once every local output has run, revisit a path only when it leads to a
+  // downstream branch with an untried output or to an outstanding checkpoint.
+  if (!candidates.length) {
+    candidates = groups.filter((group) => (
+      untriedBranchDistance(group, outgoing, usedOutputs, nodeId) < Number.POSITIVE_INFINITY
+      || shortestDistance(group.map((edge) => edge.target), remaining, outgoing, nodeId) < Number.POSITIVE_INFINITY
+    ));
+  }
+  if (!candidates.length) return undefined;
+
+  if (mode === 'custom' && remaining.size) {
+    const distances = candidates.map((group) => shortestDistance(group.map((edge) => edge.target), remaining, outgoing, nodeId));
+    const nearest = Math.min(...distances);
+    if (nearest < Number.POSITIVE_INFINITY) candidates = candidates.filter((_group, index) => distances[index] === nearest);
+  } else if (!fresh.length) {
+    const distances = candidates.map((group) => untriedBranchDistance(group, outgoing, usedOutputs, nodeId));
+    const nearest = Math.min(...distances);
+    if (nearest < Number.POSITIVE_INFINITY) candidates = candidates.filter((_group, index) => distances[index] === nearest);
+  }
+
+  const selected = candidates[Math.min(candidates.length - 1, Math.floor(random() * candidates.length))];
+  used.add(selected[0].outputIndex);
+  usedOutputs.set(nodeId, used);
+  return selected;
 }
 
 function visibleEdgeIds(id: string): string[] {
@@ -225,26 +263,15 @@ export function buildSimulationSteps(
   const edges = executionEdges(scene);
   const outgoing = outgoingMap(ids, edges);
   const analysis = analyzeSimulationGraph(scene);
-  const { componentByNode } = loopMetadata(ids, outgoing);
   const remaining = new Set([...checkpoints].filter((id) => ids.has(id)));
-  const completedCycles = new Set<string>();
-  const allCycleSignatures = new Set<string>();
-  const cycleCache = new Map<string, Set<string>>();
-  for (const id of analysis.loops) {
-    const component = componentByNode.get(id)!;
-    groupedOutputs(outgoing.get(id) ?? []).forEach((group) => {
-      const key = `${id}:${group[0]?.outputIndex ?? 0}`;
-      const signatures = cycleSignaturesForGroup(id, group, outgoing, component);
-      cycleCache.set(key, signatures);
-      signatures.forEach((signature) => allCycleSignatures.add(signature));
-    });
-  }
+  const usedOutputs = new Map<string, Set<number>>();
 
   const waiting = new Map<string, SimulationToken[]>();
   [...analysis.starts].sort().forEach((id) => waiting.set(id, [{ id, path: [] }]));
   const visits = new Map<string, number>();
   const steps: SimulationStep[] = [];
-  const maxLoopVisits = Math.max(2, allCycleSignatures.size + 2);
+  const branchOutputBudget = [...analysis.branches].reduce((sum, id) => sum + groupedOutputs(outgoing.get(id) ?? []).length, 0);
+  const maxLoopVisits = Math.max(2, Math.min(64, branchOutputBudget + 2));
   const safetyLimit = Math.max(64, scene.nodes.length * (maxLoopVisits + 2) + edges.length * 4);
 
   while (waiting.size && steps.length < safetyLimit) {
@@ -276,23 +303,9 @@ export function buildSimulationSteps(
       const token = tokens.sort((left, right) => left.path.length - right.path.length || left.path.join('\u0000').localeCompare(right.path.join('\u0000')))[0];
       const path = [...token.path, id];
 
-      let groups = groupedOutputs(outgoing.get(id) ?? []);
-      const component = componentByNode.get(id);
-      if (component && groups.length) {
-        const withUnexploredCycles = groups.filter((group) => {
-          const key = `${id}:${group[0]?.outputIndex ?? 0}`;
-          return [...(cycleCache.get(key) ?? [])].some((signature) => !completedCycles.has(signature));
-        });
-        if (withUnexploredCycles.length) groups = withUnexploredCycles;
-        else groups = groups.filter((group) => canEscapeWithoutReturning(id, group, outgoing, component));
-      }
-      if (!groups.length) continue;
-      if (mode === 'custom') groups = checkpointGuidedGroups(groups, outgoing, remaining);
-      if (groups.length > 1) groups = [groups[Math.min(groups.length - 1, Math.floor(random() * groups.length))]];
-
-      for (const edge of groups.flat()) {
-        const repeatedAt = path.lastIndexOf(edge.target);
-        if (repeatedAt >= 0) completedCycles.add(cycleSignature(path.slice(repeatedAt)));
+      const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, mode, random);
+      if (!selectedGroup) continue;
+      for (const edge of selectedGroup) {
         produced.push({ id: edge.target, path, edgeId: edge.id });
       }
     }
