@@ -177,7 +177,17 @@ function buildFragment(
       ...child,
       ...translateScene(child, boundaryX + 130 - childBounds.x, boundaryY + 106 - childBounds.y),
     };
-    scene.nodes.push(boundary, ...child.nodes);
+    const exitSyncId = `${boundaryId}/simulation-exit`;
+    const exitSync: SceneNode = {
+      id: exitSyncId,
+      kind: 'port',
+      x: boundaryX + contentWidth,
+      y: boundaryY + (contentHeight * Number(boundary.data.outputAnchor ?? 50) / 100),
+      width: 0,
+      height: 0,
+      data: { simulationOnly: true, boundaryId },
+    };
+    scene.nodes.push(boundary, exitSync, ...child.nodes);
     scene.edges.push(...child.edges);
     const incoming = scene.edges.filter((edge) => edge.target === callId);
     const outgoing = scene.edges.filter((edge) => edge.source === callId);
@@ -199,15 +209,28 @@ function buildFragment(
         hidden: true,
       });
     }));
-    outgoing.forEach((edge) => child.terminalIds.forEach((terminalId, index) => {
+    child.terminalIds.forEach((terminalId, index) => {
+      scene.edges.push({
+        id: `${boundaryId}:simulation-exit-arrival:${index}`,
+        source: terminalId,
+        target: exitSyncId,
+        sourceHandle: 'out:main:0',
+        targetHandle: `in:main:${index}`,
+        connectionType: 'main',
+        outputIndex: 0,
+        inputIndex: index,
+        hidden: true,
+      });
+    });
+    outgoing.forEach((edge, index) => {
       scene.edges.push({
         ...edge,
         id: `${edge.id}:logical-exit:${index}`,
-        source: terminalId,
-        sourceHandle: 'out:main:0',
+        source: exitSyncId,
+        sourceHandle: edge.sourceHandle ?? `out:${edge.connectionType}:${edge.outputIndex}`,
         hidden: true,
       });
-    }));
+    });
   }
 
   let fragment: Fragment = { ...scene, entryIds: [], terminalIds: [], ambiguousEntry: false, ambiguousExit: false };

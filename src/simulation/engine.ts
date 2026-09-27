@@ -263,6 +263,7 @@ export function buildSimulationSteps(
   const edges = executionEdges(scene);
   const outgoing = outgoingMap(ids, edges);
   const analysis = analyzeSimulationGraph(scene);
+  const simulationOnly = new Set(scene.nodes.filter((node) => node.data.simulationOnly).map((node) => node.id));
   const remaining = new Set([...checkpoints].filter((id) => ids.has(id)));
   const usedOutputs = new Map<string, Set<number>>();
 
@@ -289,10 +290,13 @@ export function buildSimulationSteps(
     ready.sort();
 
     const arrivals = ready.flatMap((id) => waiting.get(id) ?? []);
-    steps.push({
-      nodeIds: ready,
-      edgeIds: [...new Set(arrivals.flatMap((token) => token.edgeId ? visibleEdgeIds(token.edgeId) : []))],
-    });
+    const visibleReady = ready.filter((id) => !simulationOnly.has(id));
+    if (visibleReady.length) {
+      steps.push({
+        nodeIds: visibleReady,
+        edgeIds: [...new Set(arrivals.flatMap((token) => token.edgeId ? visibleEdgeIds(token.edgeId) : []))],
+      });
+    }
 
     const produced: SimulationToken[] = [];
     for (const id of ready) {

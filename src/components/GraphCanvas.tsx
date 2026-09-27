@@ -440,7 +440,7 @@ interface RouteRect { left: number; right: number; top: number; bottom: number }
 function nodeRect(node: Node, clearanceOverride?: number): RouteRect {
   const width = node.measured?.width ?? node.width ?? Number(node.style?.width ?? 0);
   const height = node.measured?.height ?? node.height ?? Number(node.style?.height ?? 0);
-  const clearance = clearanceOverride ?? (node.type === 'boundary' ? 24 : 0);
+  const clearance = clearanceOverride ?? (node.type === 'boundary' ? 28 : 10);
   return {
     left: node.position.x - clearance,
     right: node.position.x + width + clearance,
@@ -590,7 +590,13 @@ function gridRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteRect[
   return simplifyRoute(route.reverse());
 }
 
-function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteRect[]): RoutePoint[] {
+function horizontalRoute(
+  source: RoutePoint,
+  target: RoutePoint,
+  obstacles: RouteRect[],
+  sourceLead = 20,
+  targetLead = 20,
+): RoutePoint[] {
   const gap = target.x - source.x;
   // Do not introduce a midpoint bend when exported geometry already aligns
   // the two handles. This is the common n8n Merge -> next-node shape.
@@ -598,7 +604,7 @@ function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: Rout
     const direct = [source, target];
     if (!routeHits(direct, obstacles)) return direct;
   }
-  if (gap >= 0) {
+  if (gap >= sourceLead + targetLead) {
     const centerX = source.x + (gap / 2);
     const direct = [source, { x: centerX, y: source.y }, { x: centerX, y: target.y }, target];
     if (!routeHits(direct, obstacles)) return direct;
@@ -616,8 +622,8 @@ function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: Rout
   // travelling around a stack of nodes. Include nearby columns so the router
   // can choose an outside lane instead of falling back through the stack.
   const routingObstacles = obstacles.filter((rect) => rect.right > minX - 240 && rect.left < maxX + 240);
-  const sourceExitX = gap >= 0 ? source.x + Math.min(20, Math.max(4, gap / 3)) : source.x + 24;
-  const targetEntryX = gap >= 0 ? target.x - Math.min(20, Math.max(4, gap / 3)) : target.x - 24;
+  const sourceExitX = source.x + Math.max(sourceLead, gap < 0 ? 24 : 0);
+  const targetEntryX = target.x - Math.max(targetLead, gap < 0 ? 24 : 0);
   const preferredY = (source.y + target.y) / 2;
   const laneCandidates = [...new Set([
     Math.min(source.y, target.y) - 24,
@@ -649,8 +655,11 @@ function horizontalRoute(source: RoutePoint, target: RoutePoint, obstacles: Rout
       if (!routeHits(candidate, obstacles)) return candidate;
     }
   }
-  const searched = gridRoute(source, target, obstacles, routingObstacles);
-  if (searched) return searched;
+  const searched = gridRoute({ x: sourceExitX, y: source.y }, { x: targetEntryX, y: target.y }, obstacles, routingObstacles);
+  if (searched) {
+    const candidate = [source, ...searched, target];
+    if (!routeHits(candidate, obstacles)) return candidate;
+  }
   const fallbackLane = Math.max(source.y, target.y, ...relevant.map((rect) => rect.bottom)) + 24;
   return [source, { x: sourceExitX, y: source.y }, { x: sourceExitX, y: fallbackLane }, { x: targetEntryX, y: fallbackLane }, { x: targetEntryX, y: target.y }, target];
 }
@@ -692,6 +701,8 @@ function verticalRoute(source: RoutePoint, target: RoutePoint, obstacles: RouteR
 
 function N8nRoutedEdge(props: EdgeProps) {
   const allNodes = useNodes();
+  const sourceNode = allNodes.find((node) => node.id === props.source);
+  const targetNode = allNodes.find((node) => node.id === props.target);
   const source = { x: props.sourceX, y: props.sourceY };
   const target = { x: props.targetX, y: props.targetY };
   const obstacles = allNodes.flatMap((node) => {
@@ -720,7 +731,7 @@ function N8nRoutedEdge(props: EdgeProps) {
   const supportsHorizontalRouting = props.sourcePosition === Position.Right && props.targetPosition === Position.Left;
   const supportsVerticalRouting = props.sourcePosition === Position.Bottom && props.targetPosition === Position.Top;
   const route = supportsHorizontalRouting
-    ? horizontalRoute(source, target, obstacles)
+    ? horizontalRoute(source, target, obstacles, sourceNode?.type === 'boundary' ? 36 : 20, targetNode?.type === 'boundary' ? 36 : 20)
     : supportsVerticalRouting ? verticalRoute(source, target, obstacles) : undefined;
   const midpoint = route ? routeMidpoint(route) : { x: fallback[1], y: fallback[2] };
   const path = route ? roundedRoute(route) : fallback[0];
@@ -829,7 +840,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
   const basePositionsRef = useRef(new Map<string, { x: number; y: number }>());
   const boundaryDragRef = useRef<{ id: string; last: { x: number; y: number }; children: Set<string> }>();
   const suppressClickUntilRef = useRef(0);
-  const preparedNodes = useMemo<CanvasNode[]>(() => scene.nodes.map((node) => {
+  const preparedNodes = useMemo<CanvasNode[]>(() => scene.nodes.filter((node) => !node.data.simulationOnly).map((node) => {
     basePositionsRef.current.set(node.id, { x: node.x, y: node.y });
     const offset = offsetsRef.current.get(node.id) ?? { x: 0, y: 0 };
     return {
@@ -925,7 +936,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     boundaryDragRef.current = undefined;
     suppressClickUntilRef.current = Date.now() + 220;
   }, [nodes, rememberPositions]);
-  const edges = useMemo<Edge[]>(() => scene.edges.map((edge) => ({
+  const edges = useMemo<Edge[]>(() => scene.edges.filter((edge) => !edge.hidden).map((edge) => ({
     id: edge.id,
     source: edge.source,
     target: edge.target,

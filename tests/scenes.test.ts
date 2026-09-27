@@ -51,10 +51,14 @@ describe('scene builders', () => {
     expect(scene.nodes.some((item) => item.id.includes('/node:trigger'))).toBe(false);
     const entries = scene.nodes.filter((item) => item.data.boundaryEntry);
     expect(entries.map((item) => item.data.label).sort()).toEqual(['Left branch', 'Right branch']);
-    expect(scene.nodes.some((item) => item.kind === 'port')).toBe(false);
+    expect(scene.nodes.some((item) => item.kind === 'port' && !item.data.simulationOnly)).toBe(false);
     expect(scene.edges.filter((edge) => edge.hidden && entries.some((entry) => edge.target === entry.id))).toHaveLength(2);
     const boundary = scene.nodes.find((item) => item.kind === 'boundary')!;
     expect(scene.edges.some((edge) => !edge.hidden && edge.target === boundary.id)).toBe(true);
+    const exitSync = scene.nodes.find((item) => item.data.simulationOnly)!;
+    expect(exitSync).toMatchObject({ kind: 'port', width: 0, height: 0 });
+    expect(scene.edges.filter((edge) => edge.hidden && edge.target === exitSync.id)).toHaveLength(2);
+    expect(scene.edges.filter((edge) => edge.hidden && edge.source === exitSync.id)).toHaveLength(1);
   });
 
   it('marks every possible terminal without adding result ports', () => {

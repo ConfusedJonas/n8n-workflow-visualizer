@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphScene } from '../src/renderers/scene';
 import { analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict } from '../src/simulation/engine';
+import { parseN8nDocument } from '../src/n8n/parser';
+import { buildExpandedScene } from '../src/renderers/expanded/expanded';
+import { createWorkspace } from '../src/workspace/resolve';
+import { childWorkflow, mainWorkflow } from './fixtures';
 
 const node = (id: string) => ({ id, kind: 'workflow' as const, x: 0, y: 0, width: 100, height: 80, data: {} });
 const edge = (id: string, source: string, target: string, outputIndex = 0) => ({ id, source, target, connectionType: 'main', outputIndex, inputIndex: 0 });
@@ -94,6 +98,19 @@ describe('workflow simulation', () => {
     expect(buildSimulationSteps(scene, 'random', new Set(), () => 0).map((step) => step.nodeIds)).toEqual([
       ['start'], ['fan'], ['long-1', 'short'], ['long-2'], ['merge'], ['end'],
     ]);
+  });
+
+  it('waits for every active sub-workflow terminal and releases one outside signal', () => {
+    const parsed = [mainWorkflow(), childWorkflow()].map((raw) => parseN8nDocument(raw).workflows[0]);
+    const scene = buildExpandedScene(createWorkspace(parsed), 'workflow:main');
+    const steps = buildSimulationSteps(scene, 'random', new Set(), () => 0);
+    const labels = steps.map((step) => step.nodeIds.map((id) => String(scene.nodes.find((item) => item.id === id)?.data.label)));
+    expect(labels).toEqual([
+      ['Start'],
+      ['Left branch', 'Right branch'],
+      ['Finish'],
+    ]);
+    expect(steps.flatMap((step) => step.nodeIds).filter((id) => id.endsWith('/node:finish'))).toHaveLength(1);
   });
 
   it('assigns separate indicators to distinct loop paths', () => {
