@@ -189,6 +189,56 @@ test('animates expanded workflow entries in parallel and keeps the executed trai
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(5);
 });
 
+test('routes a backward boundary output sideways and waits for unequal internal branches', async ({ page }) => {
+  const parent = {
+    id: 'sync-parent', name: 'Boundary synchronization', nodes: [
+      { id: 'start', name: 'Start', type: 'n8n-nodes-base.manualTrigger', position: [0, 0], parameters: {} },
+      { id: 'call', name: 'Run parallel child', type: 'n8n-nodes-base.executeWorkflow', position: [300, 0], parameters: { workflowId: 'sync-child' } },
+      { id: 'finish', name: 'Finish outside', type: 'n8n-nodes-base.set', position: [-220, 220], parameters: {} },
+    ], connections: {
+      Start: { main: [[{ node: 'Run parallel child', type: 'main', index: 0 }]] },
+      'Run parallel child': { main: [[{ node: 'Finish outside', type: 'main', index: 0 }]] },
+    },
+  };
+  const child = {
+    id: 'sync-child', name: 'Parallel child', nodes: [
+      { id: 'input', name: 'Input', type: 'n8n-nodes-base.executeWorkflowTrigger', position: [0, 80], parameters: {} },
+      { id: 'short', name: 'Short end', type: 'n8n-nodes-base.set', position: [260, 0], parameters: {} },
+      { id: 'long-1', name: 'Long 1', type: 'n8n-nodes-base.set', position: [260, 160], parameters: {} },
+      { id: 'long-2', name: 'Long 2', type: 'n8n-nodes-base.set', position: [520, 160], parameters: {} },
+    ], connections: {
+      Input: { main: [[{ node: 'Short end', type: 'main', index: 0 }, { node: 'Long 1', type: 'main', index: 0 }]] },
+      'Long 1': { main: [[{ node: 'Long 2', type: 'main', index: 0 }]] },
+    },
+  };
+  await page.locator('input[type=file]').setInputFiles([
+    { name: 'sync-parent.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(parent)) },
+    { name: 'sync-child.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(child)) },
+  ]);
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByText('Boundary synchronization', { exact: true }).first().click();
+  await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
+
+  const boundaryLead = await page.evaluate(() => {
+    const boundaryId = document.querySelector('.react-flow__node-boundary')?.getAttribute('data-id');
+    const route = [...document.querySelectorAll('[data-route-source]')].find((candidate) => candidate.getAttribute('data-route-source') === boundaryId)!;
+    const path = route.querySelector('.react-flow__edge-path') as SVGPathElement;
+    const start = path.getPointAtLength(0);
+    const after = path.getPointAtLength(10);
+    return { dx: after.x - start.x, dy: after.y - start.y };
+  });
+  expect(boundaryLead.dx).toBeGreaterThan(8);
+  expect(Math.abs(boundaryLead.dy)).toBeLessThan(0.5);
+
+  await page.getByLabel('Speed').selectOption('250');
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active').filter({ hasText: 'Short end' })).toBeVisible({ timeout: 1500 });
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active').filter({ hasText: 'Long 1' })).toBeVisible();
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active').filter({ hasText: 'Long 2' })).toBeVisible({ timeout: 1500 });
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed').filter({ hasText: 'Finish outside' })).toHaveCount(0);
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-active').filter({ hasText: 'Finish outside' })).toBeVisible({ timeout: 1500 });
+});
+
 test('centers a four-input Merge icon and aligns its outgoing handle', async ({ page }) => {
   const alignedMerge = {
     id: 'aligned-merge', name: 'Aligned Merge', nodes: [

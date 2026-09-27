@@ -643,8 +643,14 @@ function horizontalRoute(
     maxX + 48,
     ...routingObstacles.flatMap((rect) => [rect.left - 14, rect.right + 14]),
   ])];
-  const nearSource = [...xCandidates].sort((left, right) => Math.abs(left - sourceExitX) - Math.abs(right - sourceExitX)).slice(0, 40);
-  const nearTarget = [...xCandidates].sort((left, right) => Math.abs(left - targetEntryX) - Math.abs(right - targetEntryX)).slice(0, 40);
+  const nearSource = [...xCandidates]
+    .filter((x) => x >= source.x + sourceLead - 0.5)
+    .sort((left, right) => Math.abs(left - sourceExitX) - Math.abs(right - sourceExitX))
+    .slice(0, 40);
+  const nearTarget = [...xCandidates]
+    .filter((x) => x <= target.x - targetLead + 0.5)
+    .sort((left, right) => Math.abs(left - targetEntryX) - Math.abs(right - targetEntryX))
+    .slice(0, 40);
   for (const laneY of laneCandidates.slice(0, 60)) {
     const clearSources = nearSource.filter((x) => !routeHits([source, { x, y: source.y }, { x, y: laneY }], obstacles));
     const clearTargets = nearTarget.filter((x) => !routeHits([{ x, y: laneY }, { x, y: target.y }, target], obstacles));
@@ -712,6 +718,20 @@ function N8nRoutedEdge(props: EdgeProps) {
     // Endpoint boundaries use their actual rectangle so an edge can start or
     // finish exactly on its side, but cannot turn back through the box.
     const rect = nodeRect(node, endpoint ? 0 : undefined);
+    // React Flow handle coordinates can differ from the measured boundary by
+    // a fraction of a pixel. Keep the box interior solid while moving its
+    // contact side just beyond the handle, otherwise the router can mistake a
+    // valid horizontal departure for a collision and turn vertically at once.
+    if (endpoint && node.type === 'boundary') {
+      if (node.id === props.source) {
+        if (props.sourcePosition === Position.Right) rect.right = source.x - 0.5;
+        if (props.sourcePosition === Position.Left) rect.left = source.x + 0.5;
+      }
+      if (node.id === props.target) {
+        if (props.targetPosition === Position.Left) rect.left = target.x + 0.5;
+        if (props.targetPosition === Position.Right) rect.right = target.x - 0.5;
+      }
+    }
     if (node.type === 'boundary' && !endpoint) {
       const contains = (point: RoutePoint) => point.x > rect.left && point.x < rect.right && point.y > rect.top && point.y < rect.bottom;
       if (contains(source) && contains(target)) return [];
@@ -736,7 +756,7 @@ function N8nRoutedEdge(props: EdgeProps) {
   const midpoint = route ? routeMidpoint(route) : { x: fallback[1], y: fallback[2] };
   const path = route ? roundedRoute(route) : fallback[0];
   return (
-    <g data-route-source={props.source} data-route-target={props.target}>
+    <g data-route-source={props.source} data-route-target={props.target} data-route-source-position={props.sourcePosition} data-route-target-position={props.targetPosition}>
       <BaseEdge
         id={props.id}
         path={path}

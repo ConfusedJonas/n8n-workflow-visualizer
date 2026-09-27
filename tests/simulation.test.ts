@@ -113,6 +113,30 @@ describe('workflow simulation', () => {
     expect(steps.flatMap((step) => step.nodeIds).filter((id) => id.endsWith('/node:finish'))).toHaveLength(1);
   });
 
+  it('keeps an exit synchronizer inside an outer loop blocked until unequal parallel paths finish', () => {
+    const sync: GraphScene['nodes'][number] = { ...node('sync'), kind: 'port', data: { simulationOnly: true, boundaryId: 'box', simulationBoundaries: ['box'] } };
+    const scene: GraphScene = {
+      nodes: [...['root', 'start', 'short', 'long-1', 'long-2', 'after'].map(node), sync],
+      edges: [
+        { ...edge('enter', 'root', 'start'), simulationBoundary: 'box', simulationRole: 'entry' as const },
+        edge('fan-short', 'start', 'short'),
+        edge('fan-long', 'start', 'long-1'),
+        { ...edge('short-arrival', 'short', 'sync'), simulationBoundary: 'box', simulationRole: 'arrival' as const },
+        edge('long-next', 'long-1', 'long-2'),
+        { ...edge('long-arrival', 'long-2', 'sync'), simulationBoundary: 'box', simulationRole: 'arrival' as const },
+        { ...edge('release', 'sync', 'after'), simulationBoundary: 'box', simulationRole: 'release' as const },
+        { ...edge('outer-loop', 'after', 'start'), simulationBoundary: 'box', simulationRole: 'entry' as const },
+      ],
+    };
+    expect(buildSimulationSteps(scene, 'random', new Set(), () => 0).slice(0, 4).map((step) => step.nodeIds)).toEqual([
+      ['root'],
+      ['start'],
+      ['long-1', 'short'],
+      ['long-2'],
+    ]);
+    expect(buildSimulationSteps(scene, 'random', new Set(), () => 0)[4]?.nodeIds).toEqual(['after']);
+  });
+
   it('assigns separate indicators to distinct loop paths', () => {
     const scene: GraphScene = {
       nodes: ['gate', 'left', 'right'].map(node),

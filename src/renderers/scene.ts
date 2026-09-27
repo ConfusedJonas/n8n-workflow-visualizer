@@ -30,6 +30,8 @@ export interface SceneEdge {
   label?: string;
   inactive?: boolean;
   hidden?: boolean;
+  simulationBoundary?: string;
+  simulationRole?: 'entry' | 'arrival' | 'release';
   style?: CSSProperties;
 }
 

@@ -173,9 +173,20 @@ function buildFragment(
           : undefined,
       },
     };
+    const translatedChild = translateScene(child, boundaryX + 130 - childBounds.x, boundaryY + 106 - childBounds.y);
     child = {
       ...child,
-      ...translateScene(child, boundaryX + 130 - childBounds.x, boundaryY + 106 - childBounds.y),
+      ...translatedChild,
+      nodes: translatedChild.nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          simulationBoundaries: [...new Set([
+            ...((node.data.simulationBoundaries as string[] | undefined) ?? []),
+            boundaryId,
+          ])],
+        },
+      })),
     };
     const exitSyncId = `${boundaryId}/simulation-exit`;
     const exitSync: SceneNode = {
@@ -185,7 +196,7 @@ function buildFragment(
       y: boundaryY + (contentHeight * Number(boundary.data.outputAnchor ?? 50) / 100),
       width: 0,
       height: 0,
-      data: { simulationOnly: true, boundaryId },
+      data: { simulationOnly: true, boundaryId, simulationBoundaries: [boundaryId] },
     };
     scene.nodes.push(boundary, exitSync, ...child.nodes);
     scene.edges.push(...child.edges);
@@ -206,6 +217,8 @@ function buildFragment(
         id: `${edge.id}:logical-entry:${index}`,
         target: entryId,
         targetHandle: 'in:main:0',
+        simulationBoundary: boundaryId,
+        simulationRole: 'entry',
         hidden: true,
       });
     }));
@@ -219,6 +232,8 @@ function buildFragment(
         connectionType: 'main',
         outputIndex: 0,
         inputIndex: index,
+        simulationBoundary: boundaryId,
+        simulationRole: 'arrival',
         hidden: true,
       });
     });
@@ -228,6 +243,8 @@ function buildFragment(
         id: `${edge.id}:logical-exit:${index}`,
         source: exitSyncId,
         sourceHandle: edge.sourceHandle ?? `out:${edge.connectionType}:${edge.outputIndex}`,
+        simulationBoundary: boundaryId,
+        simulationRole: 'release',
         hidden: true,
       });
     });

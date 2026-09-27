@@ -19,6 +19,7 @@ interface SimulationToken {
   id: string;
   path: string[];
   edgeId?: string;
+  boundaries: string[];
 }
 
 function executableNodeIds(scene: GraphScene): Set<string> {
@@ -264,11 +265,19 @@ export function buildSimulationSteps(
   const outgoing = outgoingMap(ids, edges);
   const analysis = analyzeSimulationGraph(scene);
   const simulationOnly = new Set(scene.nodes.filter((node) => node.data.simulationOnly).map((node) => node.id));
+  const syncBoundaryByNode = new Map(scene.nodes.flatMap((node) => (
+    node.data.simulationOnly && typeof node.data.boundaryId === 'string' ? [[node.id, node.data.boundaryId] as const] : []
+  )));
+  const nodeById = new Map(scene.nodes.map((node) => [node.id, node]));
   const remaining = new Set([...checkpoints].filter((id) => ids.has(id)));
   const usedOutputs = new Map<string, Set<number>>();
 
   const waiting = new Map<string, SimulationToken[]>();
-  [...analysis.starts].sort().forEach((id) => waiting.set(id, [{ id, path: [] }]));
+  [...analysis.starts].sort().forEach((id) => waiting.set(id, [{
+    id,
+    path: [],
+    boundaries: [...((nodeById.get(id)?.data.simulationBoundaries as string[] | undefined) ?? [])],
+  }]));
   const visits = new Map<string, number>();
   const steps: SimulationStep[] = [];
   const branchOutputBudget = [...analysis.branches].reduce((sum, id) => sum + groupedOutputs(outgoing.get(id) ?? []).length, 0);
@@ -283,9 +292,17 @@ export function buildSimulationSteps(
     for (const id of [...waiting.keys()]) if (!candidates.includes(id)) waiting.delete(id);
     if (!candidates.length) break;
 
-    let ready = candidates.filter((candidate) => analysis.loops.has(candidate) || !candidates.some((other) => (
-      other !== candidate && canReach(other, candidate, outgoing)
-    )));
+    let ready = candidates.filter((candidate) => {
+      const syncBoundary = syncBoundaryByNode.get(candidate);
+      if (syncBoundary) {
+        return ![...waiting.entries()].some(([other, tokens]) => (
+          other !== candidate && tokens.some((token) => token.boundaries.includes(syncBoundary))
+        ));
+      }
+      return analysis.loops.has(candidate) || !candidates.some((other) => (
+        other !== candidate && canReach(other, candidate, outgoing)
+      ));
+    });
     if (!ready.length) ready = [candidates.sort()[0]];
     ready.sort();
 
@@ -300,17 +317,24 @@ export function buildSimulationSteps(
 
     const produced: SimulationToken[] = [];
     for (const id of ready) {
-      const tokens = waiting.get(id) ?? [{ id, path: [] }];
+      const tokens = waiting.get(id) ?? [{ id, path: [], boundaries: [] }];
       waiting.delete(id);
       visits.set(id, (visits.get(id) ?? 0) + 1);
       remaining.delete(id);
       const token = tokens.sort((left, right) => left.path.length - right.path.length || left.path.join('\u0000').localeCompare(right.path.join('\u0000')))[0];
       const path = [...token.path, id];
+      const mergedBoundaries = [...new Set(tokens.flatMap((item) => item.boundaries))];
 
       const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, mode, random);
       if (!selectedGroup) continue;
       for (const edge of selectedGroup) {
-        produced.push({ id: edge.target, path, edgeId: edge.id });
+        let boundaries = mergedBoundaries;
+        if (edge.simulationBoundary && edge.simulationRole === 'entry') {
+          boundaries = [...new Set([...boundaries, edge.simulationBoundary])];
+        } else if (edge.simulationBoundary && edge.simulationRole === 'release') {
+          boundaries = boundaries.filter((boundary) => boundary !== edge.simulationBoundary);
+        }
+        produced.push({ id: edge.target, path, edgeId: edge.id, boundaries });
       }
     }
     for (const token of produced) waiting.set(token.id, [...(waiting.get(token.id) ?? []), token]);
