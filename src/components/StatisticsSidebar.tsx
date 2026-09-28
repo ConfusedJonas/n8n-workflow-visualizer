@@ -1,12 +1,10 @@
-import { GitBranch, GitMerge, Network, Repeat2, SquareStack, Workflow, X } from 'lucide-react';
+import { GitMerge, Network, SquareStack, Workflow, X } from 'lucide-react';
 
 export interface WorkflowStatistics {
   nodes: number;
   connections: number;
   subworkflows: number;
   subworkflowCalls: number;
-  loops: number;
-  branches: number;
   endNodes: number;
   missingDependencies: number;
   missingReferences: number;
@@ -23,8 +21,6 @@ export function StatisticsSidebar({ name, statistics, onClose }: StatisticsSideb
     { label: 'Total nodes', value: statistics.nodes, icon: Workflow },
     { label: 'Connections', value: statistics.connections, icon: Network },
     { label: 'Sub-workflows', value: statistics.subworkflows, detail: `${statistics.subworkflowCalls} call${statistics.subworkflowCalls === 1 ? '' : 's'}`, icon: SquareStack },
-    { label: 'Loops', value: statistics.loops, icon: Repeat2 },
-    { label: 'Branches', value: statistics.branches, icon: GitBranch },
     { label: 'Possible end nodes', value: statistics.endNodes, icon: GitMerge },
   ];
   return (

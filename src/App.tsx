@@ -1,5 +1,5 @@
 import '@xyflow/react/dist/style.css';
-import { BarChart3, Download, Flag, FolderOpen, Info, Layers3, Network, Play, RefreshCw, Repeat2, Route, ScanSearch, Shuffle, Square, Upload, X } from 'lucide-react';
+import { BarChart3, CircleStop, Download, Eraser, Flag, FolderOpen, Info, Layers3, Network, Play, RefreshCw, Route, ScanSearch, Shuffle, Square, Upload, Video, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GraphCanvas, type GraphCanvasHandle } from './components/GraphCanvas';
 import { Sidebar } from './components/Sidebar';
@@ -9,6 +9,7 @@ import type { NormalizedWorkflow, ParseDiagnostic } from './n8n/types';
 import { buildDependencyScene } from './renderers/dependencies/dependency';
 import { buildExpandedScene } from './renderers/expanded/expanded';
 import { buildOriginalScene } from './renderers/workflow/original';
+import { startExecutionRecording, type ExecutionRecording } from './export/recordExecution';
 import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationSteps, simulationFollowTarget, type SimulationMode, type SimulationStep } from './simulation/engine';
 import {
   clearAllLocalData,
@@ -58,8 +59,6 @@ export default function App() {
   const [repeatSimulation, setRepeatSimulation] = useState(false);
   const [executedCounts, setExecutedCounts] = useState<Map<string, number>>(new Map());
   const [executedEdgeIds, setExecutedEdgeIds] = useState<Set<string>>(new Set());
-  const [showStarts, setShowStarts] = useState(false);
-  const [showLoops, setShowLoops] = useState(false);
   const [showConflicts, setShowConflicts] = useState(false);
   const [followSimulation, setFollowSimulation] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
@@ -68,8 +67,10 @@ export default function App() {
   const [busy, setBusy] = useState(true);
   const [exportError, setExportError] = useState<string>();
   const [dragging, setDragging] = useState(false);
+  const [recordingVideo, setRecordingVideo] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
+  const recordingRef = useRef<ExecutionRecording>();
 
   useEffect(() => {
     let active = true;
@@ -113,16 +114,11 @@ export default function App() {
     return buildExpandedScene(workspace, effectiveKey, { collapsedPaths });
   }, [workflow, effectiveKey, view, workspace, collapsedPaths]);
 
-  const simulationAnalysis = useMemo(() => analyzeSimulationGraph(scene), [scene]);
   const checkpointConflicts = useMemo(() => simulationMode === 'custom' ? analyzeCheckpointConflicts(scene, checkpoints) : [], [scene, checkpoints, simulationMode]);
   const checkpointConflict = checkpointConflicts.length > 0;
   const activeNodeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.nodeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const activeEdgeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.edgeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const followNodeId = useMemo(() => simulationRunning ? simulationFollowTarget(scene, simulationPlan, simulationIndex) : undefined, [scene, simulationPlan, simulationIndex, simulationRunning]);
-  const displayStartIds = useMemo(() => new Set([
-    ...simulationAnalysis.starts,
-    ...scene.nodes.filter((node) => node.data.boundaryEntry).map((node) => node.id),
-  ]), [scene.nodes, simulationAnalysis.starts]);
 
   useEffect(() => {
     setCheckpoints((current) => {
@@ -135,10 +131,32 @@ export default function App() {
     if (!checkpointConflict) setShowConflicts(false);
   }, [checkpointConflict]);
 
+  const finishRecording = useCallback(async (showSavedNotice = true) => {
+    const recording = recordingRef.current;
+    if (!recording) return;
+    recordingRef.current = undefined;
+    setRecordingVideo(false);
+    try {
+      await recording.stop();
+      if (showSavedNotice) setSimulationNotice('Video saved to your downloads.');
+    } catch (error) {
+      setSimulationNotice(error instanceof Error ? error.message : 'Could not save the video recording.');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (recordingRef.current) void finishRecording();
+  }, [effectiveKey, view, finishRecording]);
+
+  useEffect(() => () => {
+    void recordingRef.current?.stop();
+  }, []);
+
   useEffect(() => {
     if (!simulationRunning) return;
     if (!simulationPlan.length || simulationIndex >= simulationPlan.length) {
       setSimulationRunning(false);
+      void finishRecording();
       return;
     }
     const timer = window.setTimeout(() => {
@@ -156,6 +174,7 @@ export default function App() {
       }
       if (!repeatSimulation) {
         setSimulationRunning(false);
+        void finishRecording();
         return;
       }
       const nextPlan = buildSimulationSteps(scene, simulationMode, checkpoints);
@@ -166,7 +185,7 @@ export default function App() {
       if (!nextPlan.length) setSimulationRunning(false);
     }, simulationSpeed);
     return () => window.clearTimeout(timer);
-  }, [simulationRunning, simulationPlan, simulationIndex, simulationSpeed, repeatSimulation, scene, simulationMode, checkpoints]);
+  }, [simulationRunning, simulationPlan, simulationIndex, simulationSpeed, repeatSimulation, scene, simulationMode, checkpoints, finishRecording]);
 
   const importFiles = useCallback(async (fileList: FileList | File[]) => {
     const files = Array.from(fileList);
@@ -229,24 +248,27 @@ export default function App() {
 
   const togglePath = useCallback((path: string) => {
     setSimulationRunning(false);
+    void finishRecording();
     setCollapsedPaths((current) => {
       const next = new Set(current);
       if (next.has(path)) next.delete(path); else next.add(path);
       return next;
     });
-  }, []);
+  }, [finishRecording]);
 
   const expandAll = useCallback(() => {
     setSimulationRunning(false);
+    void finishRecording();
     setCollapsedPaths(new Set());
-  }, []);
+  }, [finishRecording]);
 
   const collapseEveryWorkflow = useCallback(() => {
     setSimulationRunning(false);
+    void finishRecording();
     setCollapsedPaths(new Set(scene.nodes
       .filter((node) => node.kind === 'boundary' && typeof node.data.instancePath === 'string')
       .map((node) => String(node.data.instancePath))));
-  }, [scene]);
+  }, [scene, finishRecording]);
 
   const toggleCheckpoint = useCallback((id: string) => {
     if (view !== 'view' || !['custom', 'shortest'].includes(simulationMode) || simulationRunning) return;
@@ -278,7 +300,53 @@ export default function App() {
     setSimulationRunning(false);
     setSimulationPlan([]);
     setSimulationIndex(0);
+    void finishRecording();
+  }, [finishRecording]);
+
+  const clearExecuted = useCallback(() => {
+    setExecutedCounts(new Map());
+    setExecutedEdgeIds(new Set());
   }, []);
+
+  const toggleRecording = useCallback(async () => {
+    if (recordingRef.current) {
+      await finishRecording();
+      return;
+    }
+    if (!workflow) return;
+    if (simulationMode === 'shortest' && checkpoints.size !== 1) {
+      setSimulationNotice('Select one destination node before recording Shortest mode.');
+      return;
+    }
+    if (simulationRunning) {
+      setSimulationRunning(false);
+      setSimulationPlan([]);
+      setSimulationIndex(0);
+    }
+    setSimulationNotice('Choose This Tab in the browser sharing dialog to record exactly what you see.');
+    try {
+      const recording = await startExecutionRecording(workflow.name);
+      recordingRef.current = recording;
+      setRecordingVideo(true);
+      void recording.finished.then(() => {
+        if (recordingRef.current !== recording) return;
+        recordingRef.current = undefined;
+        setRecordingVideo(false);
+        setSimulationNotice('Video saved to your downloads.');
+      }).catch((error: unknown) => {
+        if (recordingRef.current === recording) recordingRef.current = undefined;
+        setRecordingVideo(false);
+        setSimulationNotice(error instanceof Error ? error.message : 'Video recording failed.');
+      });
+      startSimulation();
+      setSimulationNotice('Recording video. Pan and zoom normally, or enable Follow.');
+    } catch (error) {
+      setRecordingVideo(false);
+      setSimulationNotice(error instanceof Error && error.name === 'NotAllowedError'
+        ? 'Video recording was cancelled.'
+        : error instanceof Error ? error.message : 'Could not start video recording.');
+    }
+  }, [checkpoints.size, finishRecording, simulationMode, simulationRunning, startSimulation, workflow]);
 
   const runExport = async (format: 'png' | 'svg') => {
     if (!workflow) return;
@@ -298,7 +366,6 @@ export default function App() {
     const originalAnalysis = analyzeSimulationGraph(buildOriginalScene(workflow));
     const descendantKeys = effectiveKey ? descendantWorkflowKeys(workspace, effectiveKey) : new Set<string>();
     const descendantWorkflows = [...descendantKeys].flatMap((key) => workspace.workflows[key] ? [workspace.workflows[key]] : []);
-    const descendantAnalyses = descendantWorkflows.map((item) => analyzeSimulationGraph(buildOriginalScene(item)));
     const references = descendantWorkflows.flatMap((item) => item.subworkflowReferences);
     const targets = new Set(references.map((reference) => (
       reference.targetWorkflowKey ?? reference.targetWorkflowId ?? reference.embeddedWorkflow?.key ?? `${reference.sourceMode}:${reference.nodeId}`
@@ -308,8 +375,6 @@ export default function App() {
       connections: descendantWorkflows.reduce((sum, item) => sum + item.edges.length, 0),
       subworkflows: targets.size,
       subworkflowCalls: references.length,
-      loops: descendantAnalyses.reduce((sum, analysis) => sum + analysis.loopGroups.length, 0),
-      branches: descendantAnalyses.reduce((sum, analysis) => sum + analysis.branches.size, 0),
       endNodes: originalAnalysis.ends.size,
       missingDependencies: missingTargetIds.size,
       missingReferences: missing.length,
@@ -363,6 +428,12 @@ export default function App() {
                 <button className={`button simulation-run ${simulationRunning ? 'is-running' : ''}`} type="button" onClick={simulationRunning ? stopSimulation : startSimulation}>
                   {simulationRunning ? <Square size={14} /> : <Play size={14} />}{simulationRunning ? 'Stop' : 'Simulate'}
                 </button>
+                <button className={`button recording-button ${recordingVideo ? 'is-recording' : ''}`} type="button" onClick={() => void toggleRecording()}>
+                  {recordingVideo ? <CircleStop size={14} /> : <Video size={14} />}{recordingVideo ? 'Stop & save' : 'Record video'}
+                </button>
+                <button className="button clear-executed" type="button" disabled={!executedCounts.size && !executedEdgeIds.size} onClick={clearExecuted} title="Remove the highlighted execution history">
+                  <Eraser size={14} /> Clear executed
+                </button>
                 <label>Speed<select value={simulationSpeed} onChange={(event) => setSimulationSpeed(Number(event.target.value))}><option value={250}>Fast · 0.25s</option><option value={700}>Normal · 0.7s</option><option value={1400}>Slow · 1.4s</option><option value={2500}>Very slow · 2.5s</option></select></label>
                 <div className="mode-switch" aria-label="Simulation mode">
                   <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationNotice(undefined); setCheckpoints(new Set()); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
@@ -379,8 +450,6 @@ export default function App() {
               </div>
               <div className="simulation-overlays" aria-label="Simulation highlights">
                 <span>Highlights:</span>
-                <button type="button" aria-pressed={showStarts} className={showStarts ? 'is-active' : ''} onClick={() => setShowStarts((value) => !value)}>Start nodes</button>
-                <button type="button" aria-pressed={showLoops} className={showLoops ? 'is-active' : ''} onClick={() => setShowLoops((value) => !value)}><Repeat2 size={12} /> Individual loops</button>
                 {checkpointConflict ? <button type="button" aria-pressed={showConflicts} className={showConflicts ? 'is-active' : ''} onClick={() => setShowConflicts((value) => !value)}><Flag size={12} /> Conflicting branches</button> : null}
                 {checkpointConflict ? <span className="simulation-note">Some checkpoints conflict; one compatible branch will be chosen randomly.</span> : null}
                 {simulationNotice ? <span className="simulation-note is-prominent" role="status">{simulationNotice}</span> : null}
@@ -397,11 +466,7 @@ export default function App() {
               executedCounts={executedCounts}
               executedEdgeIds={executedEdgeIds}
               checkpointIds={checkpoints}
-              startIds={displayStartIds}
-              loopGroups={simulationAnalysis.loopGroups}
               conflictGroups={checkpointConflicts}
-              showStarts={showStarts}
-              showLoops={showLoops}
               showConflicts={showConflicts}
               followActive={followSimulation && simulationRunning}
               followNodeId={followNodeId}

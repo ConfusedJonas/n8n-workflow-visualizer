@@ -77,9 +77,6 @@ interface CanvasNodeData extends Record<string, unknown> {
   isSimulationExecuted?: boolean;
   executionCount?: number;
   isCheckpoint?: boolean;
-  isStart?: boolean;
-  isLoop?: boolean;
-  loopNumbers?: number[];
   isConflict?: boolean;
   conflictNumbers?: number[];
   boundaryRole?: string;
@@ -107,11 +104,7 @@ interface GraphCanvasProps {
   executedCounts?: Map<string, number>;
   executedEdgeIds?: Set<string>;
   checkpointIds?: Set<string>;
-  startIds?: Set<string>;
-  loopGroups?: string[][];
   conflictGroups?: CheckpointConflictGroup[];
-  showStarts?: boolean;
-  showLoops?: boolean;
   showConflicts?: boolean;
   followActive?: boolean;
   followNodeId?: string;
@@ -134,24 +127,16 @@ function stateClasses(data: CanvasNodeData): string {
     data.isSimulationActive ? 'is-simulation-active' : '',
     data.isSimulationExecuted ? 'is-simulation-executed' : '',
     data.isCheckpoint ? 'is-checkpoint' : '',
-    data.isStart ? 'is-start-node' : '',
-    data.isLoop ? 'is-loop-node' : '',
     data.isConflict ? 'is-conflict-node' : '',
   ].filter(Boolean).join(' ');
 }
 
-const loopColors = ['#6fa8ff', '#f59e70', '#c084fc', '#36c99a', '#e8c75a', '#f472b6', '#67d4e8'];
 const conflictColors = ['#ff6b81', '#f6ad55', '#f472b6', '#c084fc', '#38bdf8', '#84cc16'];
 
 function NodeIndicators({ data }: { data: CanvasNodeData }) {
   return (
     <>
       {Number(data.executionCount ?? 0) > 1 ? <span className="execution-count" title="Execution count">×{Number(data.executionCount)}</span> : null}
-      {data.isLoop && data.loopNumbers?.length ? (
-        <span className="loop-indicators" aria-label={`Loops ${data.loopNumbers.join(', ')}`}>
-          {data.loopNumbers.map((number) => <b key={number} style={{ '--loop-color': loopColors[(number - 1) % loopColors.length] } as React.CSSProperties}>{number}</b>)}
-        </span>
-      ) : null}
       {data.isConflict && data.conflictNumbers?.length ? (
         <span className="conflict-indicators" aria-label={`Conflicts ${data.conflictNumbers.join(', ')}`}>
           {data.conflictNumbers.map((number) => <b key={number} style={{ '--conflict-color': conflictColors[(number - 1) % conflictColors.length] } as React.CSSProperties}>C{number}</b>)}
@@ -314,9 +299,8 @@ function CoreIcon({ glyph }: { glyph: CoreGlyph }) {
 
 function WorkflowNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
-  const firstLoop = data.loopNumbers?.[0];
   const firstConflict = data.conflictNumbers?.[0];
-  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
+  const style = { '--node-accent': appearance.color, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''} ${stateClasses(data)}`} style={style}>
       <div className={`node-tile shape-${appearance.shape}`}>
@@ -387,9 +371,8 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
   const expandable = data.status === 'collapsed' && typeof data.instancePath === 'string';
   const status = String(data.status ?? 'unknown');
-  const firstLoop = data.loopNumbers?.[0];
   const firstConflict = data.conflictNumbers?.[0];
-  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
+  const style = { '--node-accent': appearance.color, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node placeholder-node status-${status} ${stateClasses(data)}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
       <div className={`node-tile shape-${appearance.shape}`}>
@@ -864,11 +847,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     executedCounts = EMPTY_COUNTS,
     executedEdgeIds = EMPTY_IDS,
     checkpointIds = EMPTY_IDS,
-    startIds = EMPTY_IDS,
-    loopGroups = [],
     conflictGroups = [],
-    showStarts = false,
-    showLoops = false,
     showConflicts = false,
     followActive = false,
     followNodeId,
@@ -899,14 +878,11 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       isSimulationExecuted: executedCounts.has(node.id),
       executionCount: executedCounts.get(node.id) ?? 0,
       isCheckpoint: checkpointIds.has(node.id),
-      isStart: showStarts && startIds.has(node.id),
-      isLoop: showLoops && loopGroups.some((group) => group.includes(node.id)),
-      loopNumbers: showLoops ? loopGroups.flatMap((group, index) => group.includes(node.id) ? [index + 1] : []) : [],
       isConflict: showConflicts && conflictGroups.some((group) => group.nodeIds.includes(node.id)),
       conflictNumbers: showConflicts ? conflictGroups.flatMap((group, index) => group.nodeIds.includes(node.id) ? [index + 1] : []) : [],
     },
   };
-  }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, startIds, loopGroups, conflictGroups, showStarts, showLoops, showConflicts]);
+  }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, conflictGroups, showConflicts]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
   const nodesRef = useRef(nodes);
   const followNodeIdRef = useRef(followNodeId);

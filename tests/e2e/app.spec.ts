@@ -49,9 +49,7 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByTestId('graph-stage').locator('.boundary-port')).toHaveCount(0);
   await expect(page.getByTestId('graph-stage').locator('.is-start-node')).toHaveCount(0);
   await expect(page.getByTestId('graph-stage').locator('.is-end-node, .is-boundary-exit')).toHaveCount(0);
-  await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
-  await expect(page.getByTestId('graph-stage').locator('.is-start-node')).toHaveCount(3);
-  await page.getByRole('button', { name: 'Start nodes', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Start nodes', exact: true })).toHaveCount(0);
   const outputRoute = await page.evaluate(() => {
     const boundary = document.querySelector('.react-flow__node-boundary')!;
     const boundaryId = boundary.getAttribute('data-id');
@@ -70,6 +68,8 @@ test('imports peers independently, resolves a later child, switches views, colla
     return { crosses: false, horizontalLead: lead.x > start.x + 15 && Math.abs(lead.y - start.y) < 0.5 };
   });
   expect(outputRoute).toEqual({ crosses: false, horizontalLead: true });
+  await page.getByRole('button', { name: 'Reset view' }).click();
+  await page.waitForTimeout(350);
   const boundaryBefore = await page.getByTestId('graph-stage').locator('.workflow-boundary').boundingBox();
   const childBefore = await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Research context' }).boundingBox();
   if (!boundaryBefore || !childBefore) throw new Error('Expanded workflow geometry was unavailable.');
@@ -118,6 +118,8 @@ test('shows workflow statistics and clears checkpoints when Random mode is selec
   await expect(statistics).toContainText('Total nodes');
   await expect(statistics).not.toContainText('Nodes incl. sub-workflows');
   await expect(statistics).not.toContainText('Connections incl. sub-workflows');
+  await expect(statistics).not.toContainText('Loops');
+  await expect(statistics).not.toContainText('Branches');
   await expect(statistics).toContainText('Possible end nodes');
   await expect(statistics).toContainText('1 unique missing');
   await page.getByRole('button', { name: 'Close statistics' }).click();
@@ -173,9 +175,7 @@ test('routes a backward loop around the node between its endpoints', async ({ pa
   await middle.click();
   await page.keyboard.up('Control');
   await expect(page.getByTestId('graph-stage').locator('.react-flow__node.selected')).toHaveCount(2);
-  await page.getByRole('button', { name: 'Individual loops', exact: true }).click();
-  await expect(page.getByTestId('graph-stage').locator('.is-loop-node')).toHaveCount(3);
-  await expect(page.getByTestId('graph-stage').locator('.loop-indicators b')).toHaveCount(3);
+  await expect(page.getByRole('button', { name: 'Individual loops', exact: true })).toHaveCount(0);
 
   const crossesMiddle = await page.evaluate(() => {
     const nodes = [...document.querySelectorAll('.react-flow__node')];
@@ -233,6 +233,11 @@ test('animates expanded workflow entries in parallel and keeps the executed trai
   const zoomAfterNextFollowStep = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
   expect(zoomAfterNextFollowStep).toBeCloseTo(manuallyChangedZoom, 5);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(5);
+  await expect(page.getByRole('button', { name: 'Simulate', exact: true })).toBeVisible({ timeout: 2500 });
+  await page.getByRole('button', { name: 'Clear executed', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(0);
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__edge.is-simulation-executed')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Clear executed', exact: true })).toBeDisabled();
 });
 
 test('routes a backward boundary output sideways and waits for unequal internal branches', async ({ page }) => {
