@@ -91,6 +91,7 @@ type CanvasNode = Node<CanvasNodeData>;
 
 export interface GraphCanvasHandle {
   fit(): void;
+  getStage(): HTMLDivElement | null;
   export(format: ExportFormat, workflowName: string, viewName: string): Promise<void>;
 }
 
@@ -108,6 +109,7 @@ interface GraphCanvasProps {
   showConflicts?: boolean;
   followActive?: boolean;
   followNodeId?: string;
+  followLookaheadNodeId?: string;
 }
 
 const stickyColors: Record<number, { background: string; border: string }> = {
@@ -851,6 +853,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     showConflicts = false,
     followActive = false,
     followNodeId,
+    followLookaheadNodeId,
   }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -886,8 +889,10 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
   const nodesRef = useRef(nodes);
   const followNodeIdRef = useRef(followNodeId);
+  const followLookaheadNodeIdRef = useRef(followLookaheadNodeId);
   useEffect(() => { nodesRef.current = nodes; }, [nodes]);
   useEffect(() => { followNodeIdRef.current = followNodeId; }, [followNodeId]);
+  useEffect(() => { followLookaheadNodeIdRef.current = followLookaheadNodeId; }, [followLookaheadNodeId]);
   useEffect(() => {
     setNodes((current) => {
       const existing = new Map(current.map((node) => [node.id, node]));
@@ -933,25 +938,59 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       if (!userViewportInteractionRef.current && target && stageRef.current) {
         const viewport = instance.getViewport();
         const stage = stageRef.current.getBoundingClientRect();
-        const width = Number(target.measured?.width ?? target.width ?? target.style?.width ?? 0);
-        const height = Number(target.measured?.height ?? target.height ?? target.style?.height ?? 0);
-        const bounds = {
-          left: target.position.x * viewport.zoom + viewport.x,
-          right: (target.position.x + width) * viewport.zoom + viewport.x,
-          top: target.position.y * viewport.zoom + viewport.y,
-          bottom: (target.position.y + height) * viewport.zoom + viewport.y,
+        const boundsFor = (node: CanvasNode) => {
+          const width = Number(node.measured?.width ?? node.width ?? node.style?.width ?? 0);
+          const height = Number(node.measured?.height ?? node.height ?? node.style?.height ?? 0);
+          return {
+            left: node.position.x * viewport.zoom + viewport.x,
+            right: (node.position.x + width) * viewport.zoom + viewport.x,
+            top: node.position.y * viewport.zoom + viewport.y,
+            bottom: (node.position.y + height) * viewport.zoom + viewport.y,
+          };
         };
+        const bounds = boundsFor(target);
         // The field always occupies the central 50% of the live viewport. Its
         // flow-space size therefore updates immediately whenever zoom changes.
         const safe = { left: stage.width * 0.25, right: stage.width * 0.75, top: stage.height * 0.25, bottom: stage.height * 0.75 };
-        const dx = bounds.left < safe.left ? safe.left - bounds.left : bounds.right > safe.right ? safe.right - bounds.right : 0;
-        const dy = bounds.top < safe.top ? safe.top - bounds.top : bounds.bottom > safe.bottom ? safe.bottom - bounds.bottom : 0;
-        const blend = 1 - Math.exp(-elapsed / 170);
-        const maximumSpeed = 850;
-        const desiredVelocityX = Math.max(-maximumSpeed, Math.min(maximumSpeed, dx * 3.2));
-        const desiredVelocityY = Math.max(-maximumSpeed, Math.min(maximumSpeed, dy * 3.2));
-        velocityX += (desiredVelocityX - velocityX) * blend;
-        velocityY += (desiredVelocityY - velocityY) * blend;
+        let dx = bounds.left < safe.left ? safe.left - bounds.left : bounds.right > safe.right ? safe.right - bounds.right : 0;
+        let dy = bounds.top < safe.top ? safe.top - bounds.top : bounds.bottom > safe.bottom ? safe.bottom - bounds.bottom : 0;
+
+        // When the current node is already comfortable, begin moving toward
+        // the next step without pushing the current node out of a wider guard.
+        // This reduces catch-up distance while keeping the active step visible.
+        if (!dx && !dy) {
+          const lookaheadId = followLookaheadNodeIdRef.current;
+          const lookahead = lookaheadId && lookaheadId !== target.id
+            ? nodesRef.current.find((node) => node.id === lookaheadId)
+            : undefined;
+          if (lookahead) {
+            const nextBounds = boundsFor(lookahead);
+            const wantedX = nextBounds.left < safe.left ? safe.left - nextBounds.left : nextBounds.right > safe.right ? safe.right - nextBounds.right : 0;
+            const wantedY = nextBounds.top < safe.top ? safe.top - nextBounds.top : nextBounds.bottom > safe.bottom ? safe.bottom - nextBounds.bottom : 0;
+            const guard = { left: stage.width * 0.125, right: stage.width * 0.875, top: stage.height * 0.125, bottom: stage.height * 0.875 };
+            const minX = guard.left - bounds.left;
+            const maxX = guard.right - bounds.right;
+            const minY = guard.top - bounds.top;
+            const maxY = guard.bottom - bounds.bottom;
+            dx = minX <= maxX ? Math.max(minX, Math.min(maxX, wantedX)) : 0;
+            dy = minY <= maxY ? Math.max(minY, Math.min(maxY, wantedY)) : 0;
+          }
+        }
+
+        const distance = Math.hypot(dx, dy);
+        const maximumSpeed = Math.min(2_400, 760 + distance * 1.9);
+        const deceleration = 6_500;
+        const brakingSpeed = Math.sqrt(2 * deceleration * distance);
+        const desiredSpeed = Math.min(maximumSpeed, distance * 5.4, brakingSpeed);
+        const desiredVelocityX = distance ? dx / distance * desiredSpeed : 0;
+        const desiredVelocityY = distance ? dy / distance * desiredSpeed : 0;
+        const acceleration = Math.min(14_000, 5_000 + distance * 8);
+        const approach = (current: number, desired: number) => {
+          const limit = (Math.abs(desired) > Math.abs(current) ? acceleration : deceleration) * elapsed / 1_000;
+          return current + Math.max(-limit, Math.min(limit, desired - current));
+        };
+        velocityX = approach(velocityX, desiredVelocityX);
+        velocityY = approach(velocityY, desiredVelocityY);
         let moveX = velocityX * elapsed / 1000;
         let moveY = velocityY * elapsed / 1000;
         if (dx && Math.sign(moveX) === Math.sign(dx) && Math.abs(moveX) > Math.abs(dx)) moveX = dx;
@@ -1044,6 +1083,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
 
   useImperativeHandle(ref, () => ({
     fit: () => void instance?.fitView({ padding: 0.12, duration: 250, minZoom: 0.02 }),
+    getStage: () => stageRef.current,
     export: async (format, workflowName, viewName) => {
       if (!instance || !stageRef.current) throw new Error('The graph is not ready yet.');
       await exportGraphStage(stageRef.current, instance, format, workflowName, viewName);

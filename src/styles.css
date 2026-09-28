@@ -106,6 +106,8 @@ button { color: inherit; }
 .graph-stage .react-flow__controls-button { border-bottom-color: var(--border); color: #ddd; background: #202027; }
 .graph-stage .react-flow__controls-button:hover { background: #2b2b34; }
 .graph-stage .react-flow__controls-button svg { fill: currentColor; }
+.graph-stage.is-video-recording .react-flow__controls,
+.graph-stage.is-video-recording .react-flow__attribution { opacity: 0; pointer-events: none; }
 .graph-stage .react-flow__edge-textbg { fill: #1d1d24; }
 .graph-stage .react-flow__edge-text { fill: #d6d6dc; font-size: 10px; }
 .graph-stage .react-flow__handle { width: 9px; height: 9px; border: 2px solid #17171d; }
@@ -191,6 +193,15 @@ button { color: inherit; }
 .drop-overlay { position: fixed; z-index: 100; inset: 16px; display: flex; align-items: center; justify-content: center; flex-direction: column; border: 2px dashed #ff7b67; border-radius: 18px; color: white; background: rgba(17,17,22,.94); backdrop-filter: blur(8px); }.drop-overlay strong { margin-top: 12px; }.drop-overlay span { margin-top: 5px; color: var(--muted); font-size: 12px; }
 .import-panel { position: fixed; z-index: 90; right: 18px; bottom: 18px; width: min(440px, calc(100vw - 36px)); max-height: min(510px, calc(100vh - 36px)); overflow: hidden; border: 1px solid #3a3a44; border-radius: 12px; background: #1b1b21; box-shadow: 0 18px 55px rgba(0,0,0,.48); }
 .import-panel > header { display: flex; justify-content: space-between; align-items: center; padding: 14px 15px; border-bottom: 1px solid var(--border); }.import-panel > header div { display: flex; flex-direction: column; }.import-panel > header small { margin-top: 2px; color: var(--muted); font-size: 10px; }.result-list { max-height: 410px; overflow: auto; }.result { display: grid; grid-template-columns: 9px 1fr; gap: 9px; padding: 12px 15px; border-bottom: 1px solid #2b2b33; }.result:last-child { border: 0; }.status-dot { width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #5fcf8a; }.result.status-skipped .status-dot { background: #ef786d; }.result.status-replaced .status-dot { background: #f0b15e; }.result strong { font-size: 12px; }.result p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }.result details { margin-top: 7px; color: #b8b8c3; font-size: 10px; }.result ul { margin: 6px 0 0; padding-left: 18px; }.result li { margin: 3px 0; }.toast { position: absolute; z-index: 80; right: 20px; bottom: 20px; display: flex; gap: 8px; align-items: center; max-width: 440px; padding: 11px 12px; border: 1px solid #774d50; border-radius: 9px; background: #392326; box-shadow: 0 10px 30px rgba(0,0,0,.35); font-size: 12px; }.toast button { margin-left: 7px; padding: 0; border: 0; background: transparent; cursor: pointer; }
+.recording-review-backdrop { position: fixed; z-index: 120; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(8,8,11,.72); backdrop-filter: blur(4px); }
+.recording-review { display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; width: min(480px, calc(100vw - 48px)); padding: 19px; border: 1px solid #444450; border-radius: 13px; background: #1b1b22; box-shadow: 0 24px 80px rgba(0,0,0,.58); }
+.recording-review-icon { display: grid; width: 48px; height: 48px; place-items: center; border: 1px solid #70434b; border-radius: 12px; color: #ff7f89; background: #392329; }
+.recording-review-copy { display: flex; min-width: 0; flex-direction: column; }
+.recording-review-copy small { color: #ff919a; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.recording-review-copy strong { margin-top: 3px; font-size: 15px; }
+.recording-review-copy span { margin-top: 7px; color: #b7b7c1; font-size: 11px; }
+.recording-review-copy code { margin-top: 5px; overflow: hidden; color: #777783; font: 9px/1.4 ui-monospace, SFMono-Regular, Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.recording-review-actions { display: flex; grid-column: 1 / -1; justify-content: flex-end; gap: 8px; margin-top: 4px; padding-top: 14px; border-top: 1px solid #303039; }
 
 @media (max-width: 1100px) { .app-shell.has-statistics { grid-template-columns: 220px minmax(0, 1fr); }.app-shell.has-statistics .statistics-sidebar { position: absolute; z-index: 30; top: 0; right: 0; width: 286px; height: 100%; } }
 @media (max-width: 820px) { .app-shell { grid-template-columns: 220px minmax(0, 1fr); }.title-block span { display: none; }.toolbar .button { font-size: 0; }.toolbar .button svg { margin: 0; }.view-status > span { display: none; } }

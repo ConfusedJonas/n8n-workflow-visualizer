@@ -9,7 +9,7 @@ import type { NormalizedWorkflow, ParseDiagnostic } from './n8n/types';
 import { buildDependencyScene } from './renderers/dependencies/dependency';
 import { buildExpandedScene } from './renderers/expanded/expanded';
 import { buildOriginalScene } from './renderers/workflow/original';
-import { startExecutionRecording, type ExecutionRecording } from './export/recordExecution';
+import { downloadExecutionRecording, startExecutionRecording, type ExecutionRecording, type ExecutionRecordingResult } from './export/recordExecution';
 import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationSteps, simulationFollowTarget, type SimulationMode, type SimulationStep } from './simulation/engine';
 import {
   clearAllLocalData,
@@ -44,6 +44,19 @@ function restoredViewMode(value: unknown): ViewMode | undefined {
   return undefined;
 }
 
+function formatRecordingDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1_000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1_024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1_024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
 export default function App() {
   const [imports, setImports] = useState<NormalizedWorkflow[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>();
@@ -68,6 +81,7 @@ export default function App() {
   const [exportError, setExportError] = useState<string>();
   const [dragging, setDragging] = useState(false);
   const [recordingVideo, setRecordingVideo] = useState(false);
+  const [pendingRecording, setPendingRecording] = useState<ExecutionRecordingResult>();
   const fileRef = useRef<HTMLInputElement>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
   const recordingRef = useRef<ExecutionRecording>();
@@ -119,6 +133,9 @@ export default function App() {
   const activeNodeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.nodeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const activeEdgeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.edgeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const followNodeId = useMemo(() => simulationRunning ? simulationFollowTarget(scene, simulationPlan, simulationIndex) : undefined, [scene, simulationPlan, simulationIndex, simulationRunning]);
+  const followLookaheadNodeId = useMemo(() => simulationRunning && simulationIndex + 1 < simulationPlan.length
+    ? simulationFollowTarget(scene, simulationPlan, simulationIndex + 1)
+    : undefined, [scene, simulationPlan, simulationIndex, simulationRunning]);
 
   useEffect(() => {
     setCheckpoints((current) => {
@@ -131,14 +148,15 @@ export default function App() {
     if (!checkpointConflict) setShowConflicts(false);
   }, [checkpointConflict]);
 
-  const finishRecording = useCallback(async (showSavedNotice = true) => {
+  const finishRecording = useCallback(async (showReadyNotice = true) => {
     const recording = recordingRef.current;
     if (!recording) return;
     recordingRef.current = undefined;
     setRecordingVideo(false);
     try {
-      await recording.stop();
-      if (showSavedNotice) setSimulationNotice('Video saved to your downloads.');
+      const result = await recording.stop();
+      setPendingRecording(result);
+      if (showReadyNotice) setSimulationNotice('Video recording is ready to review.');
     } catch (error) {
       setSimulationNotice(error instanceof Error ? error.message : 'Could not save the video recording.');
     }
@@ -325,21 +343,24 @@ export default function App() {
     }
     setSimulationNotice('Choose This Tab in the browser sharing dialog to record exactly what you see.');
     try {
-      const recording = await startExecutionRecording(workflow.name);
+      const stage = graphRef.current?.getStage();
+      if (!stage) throw new Error('The workflow canvas is not ready yet.');
+      const recording = await startExecutionRecording(stage, workflow.name);
       recordingRef.current = recording;
       setRecordingVideo(true);
-      void recording.finished.then(() => {
+      void recording.finished.then((result) => {
         if (recordingRef.current !== recording) return;
         recordingRef.current = undefined;
         setRecordingVideo(false);
-        setSimulationNotice('Video saved to your downloads.');
+        setPendingRecording(result);
+        setSimulationNotice('Video recording is ready to review.');
       }).catch((error: unknown) => {
         if (recordingRef.current === recording) recordingRef.current = undefined;
         setRecordingVideo(false);
         setSimulationNotice(error instanceof Error ? error.message : 'Video recording failed.');
       });
       startSimulation();
-      setSimulationNotice('Recording video. Pan and zoom normally, or enable Follow.');
+      setSimulationNotice('Recording workflow canvas only. Pan and zoom normally, or enable Follow.');
     } catch (error) {
       setRecordingVideo(false);
       setSimulationNotice(error instanceof Error && error.name === 'NotAllowedError'
@@ -429,7 +450,7 @@ export default function App() {
                   {simulationRunning ? <Square size={14} /> : <Play size={14} />}{simulationRunning ? 'Stop' : 'Simulate'}
                 </button>
                 <button className={`button recording-button ${recordingVideo ? 'is-recording' : ''}`} type="button" onClick={() => void toggleRecording()}>
-                  {recordingVideo ? <CircleStop size={14} /> : <Video size={14} />}{recordingVideo ? 'Stop & save' : 'Record video'}
+                  {recordingVideo ? <CircleStop size={14} /> : <Video size={14} />}{recordingVideo ? 'Stop recording' : 'Record video'}
                 </button>
                 <button className="button clear-executed" type="button" disabled={!executedCounts.size && !executedEdgeIds.size} onClick={clearExecuted} title="Remove the highlighted execution history">
                   <Eraser size={14} /> Clear executed
@@ -470,6 +491,7 @@ export default function App() {
               showConflicts={showConflicts}
               followActive={followSimulation && simulationRunning}
               followNodeId={followNodeId}
+              followLookaheadNodeId={followLookaheadNodeId}
             />
             {exportError ? <div className="toast error"><Info size={16} />{exportError}<button onClick={() => setExportError(undefined)} aria-label="Dismiss"><X size={15} /></button></div> : null}
           </>
@@ -484,6 +506,23 @@ export default function App() {
         )}
       </section>
       {showStatistics && workflow && statistics ? <StatisticsSidebar name={workflow.name} statistics={statistics} onClose={() => setShowStatistics(false)} /> : null}
+      {pendingRecording ? (
+        <div className="recording-review-backdrop" role="dialog" aria-modal="true" aria-label="Video recording ready">
+          <section className="recording-review">
+            <div className="recording-review-icon"><Video size={24} /></div>
+            <div className="recording-review-copy">
+              <small>Recording complete</small>
+              <strong>Download execution video?</strong>
+              <span>{formatRecordingDuration(pendingRecording.durationMs)} · {formatFileSize(pendingRecording.blob.size)} · {pendingRecording.width}×{pendingRecording.height}</span>
+              <code>{pendingRecording.filename}</code>
+            </div>
+            <div className="recording-review-actions">
+              <button type="button" className="button" onClick={() => { setPendingRecording(undefined); setSimulationNotice(undefined); }}>Discard</button>
+              <button type="button" className="button primary" onClick={() => { downloadExecutionRecording(pendingRecording); setPendingRecording(undefined); setSimulationNotice('Video downloaded.'); }}><Download size={15} /> Download</button>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {dragging ? <div className="drop-overlay"><Upload size={34} /><strong>Drop JSON workflows to import</strong><span>Valid files are kept even when another file fails.</span></div> : null}
       {importResults.length ? (
         <aside className="import-panel" role="dialog" aria-label="Import results">

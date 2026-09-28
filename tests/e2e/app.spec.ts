@@ -390,6 +390,45 @@ test('aligns an IF true output with the exported successor position', async ({ p
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
 });
 
+test('records the graph stage and asks before downloading the video', async ({ page }) => {
+  await page.addInitScript(() => {
+    const source = document.createElement('canvas');
+    source.width = 1280;
+    source.height = 720;
+    const context = source.getContext('2d')!;
+    let frame = 0;
+    const paint = () => {
+      context.fillStyle = `hsl(${frame % 360} 30% 12%)`;
+      context.fillRect(0, 0, source.width, source.height);
+      frame += 1;
+      requestAnimationFrame(paint);
+    };
+    paint();
+    const stream = source.captureStream(30);
+    Object.defineProperty(navigator.mediaDevices, 'getDisplayMedia', { configurable: true, value: async () => stream });
+  });
+  await page.reload();
+  await page.locator('input[type=file]').setInputFiles(example('synthetic-main.json'));
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  let downloads = 0;
+  page.on('download', () => { downloads += 1; });
+
+  await page.getByRole('button', { name: 'Record video', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Stop recording', exact: true })).toBeVisible({ timeout: 3000 });
+  await expect(page.getByTestId('graph-stage')).toHaveClass(/is-video-recording/);
+  await page.waitForTimeout(650);
+  await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
+
+  const review = page.getByRole('dialog', { name: 'Video recording ready' });
+  await expect(review).toBeVisible({ timeout: 3000 });
+  await expect(review).toContainText(/\d+:\d{2} · .*B · \d+×\d+/);
+  expect(downloads).toBe(0);
+  await expect(page.getByTestId('graph-stage')).not.toHaveClass(/is-video-recording/);
+  const download = page.waitForEvent('download');
+  await review.getByRole('button', { name: 'Download', exact: true }).click();
+  expect((await download).suggestedFilename()).toBe('content-operations-execution.webm');
+});
+
 test('exports both formats and keeps sticky-note payloads inert without external requests', async ({ page }) => {
   const externalRequests: string[] = [];
   page.on('request', (request) => {

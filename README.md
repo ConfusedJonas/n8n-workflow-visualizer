@@ -17,8 +17,8 @@ A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import s
 - Supports free node movement, multi-selection, camera reset, and restoring every node to its exported/generated location.
 - Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Expanded workflows wait for every active internal branch before releasing one continuation to the caller.
 - Includes four simulation modes: **Random** chooses branches, **Custom** routes toward one or more checkpoints, **All** favors the route with the greatest reachable node coverage, and **Shortest** finds the fewest-node route to one selected destination. Conflicting Custom checkpoints can be highlighted as separately numbered branch groups.
-- Offers Repeat and Follow controls. Follow smoothly pans—without changing zoom—only when active nodes leave the central 50% of the visible canvas. Clear executed removes the retained route and execution counters.
-- Records structural execution animations to a downloadable video. Choose the current browser tab when prompted; with Follow disabled, manual pan and zoom are captured exactly as shown.
+- Offers Repeat and Follow controls. Follow uses next-step look-ahead and smoothly accelerates for distant nodes without changing the user's live zoom. Clear executed removes the retained route and execution counters.
+- Records only the workflow canvas—not the surrounding application HUD—to a reviewable video. Choose the current browser tab when prompted; both modes preserve the user's zoom, while Follow controls only automatic panning. When recording ends, the viewer shows duration, file size, resolution, and explicit Download/Discard choices.
 - Highlights missing calls with a pulse. Missing-dependency messages report both unique workflow IDs and total call references.
 - Provides an optional right-hand statistics panel whose node, connection, and sub-workflow totals include all resolved descendants. Possible end nodes remain scoped to the selected main workflow.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
@@ -43,7 +43,7 @@ The sample is synthetic and contains no user workflow data. Real exports supplie
 1. Select **Import JSON** (or drag JSON exports onto the window). Import a parent workflow and any static database-ID sub-workflows you want resolved.
 2. Use **View** to inspect or expand workflow calls. Click an expanded boundary to collapse it, or a collapsed Execute Workflow node to expand it. Drag nodes freely, Ctrl-click to select several, and use the lower-left reset controls to restore the camera or exported node positions.
 3. Use **Dependency** to see the workflow family and unresolved calls. Missing warnings are clickable, and the Highlight missing toggle makes unresolved calls pulse.
-4. Choose a simulation mode and speed. In Custom mode, click nodes to add checkpoints. In Shortest mode, click one destination. Simulation is structural only: it follows connections and never runs n8n node logic. Use **Record video** and choose the current tab to save the visible animation, including manual camera movement when Follow is off.
+4. Choose a simulation mode and speed. In Custom mode, click nodes to add checkpoints. In Shortest mode, click one destination. Simulation is structural only: it follows connections and never runs n8n node logic. Use **Record video** and choose the current tab to capture the canvas. Review its duration and size before downloading or discarding it.
 5. Open **Statistics** for a summary of the selected workflow, or export the full graph bounds as PNG/SVG.
 
 Imported workflows and UI state are stored only in that browser profile. **Clear all local data** removes the application’s IndexedDB stores.
