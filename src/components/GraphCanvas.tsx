@@ -114,6 +114,7 @@ interface GraphCanvasProps {
   showLoops?: boolean;
   showConflicts?: boolean;
   followActive?: boolean;
+  followNodeId?: string;
 }
 
 const stickyColors: Record<number, { background: string; border: string }> = {
@@ -870,6 +871,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     showLoops = false,
     showConflicts = false,
     followActive = false,
+    followNodeId,
   }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -878,7 +880,7 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
   const basePositionsRef = useRef(new Map<string, { x: number; y: number }>());
   const boundaryDragRef = useRef<{ id: string; last: { x: number; y: number }; children: Set<string> }>();
   const suppressClickUntilRef = useRef(0);
-  const followZoomRef = useRef<number>();
+  const userViewportInteractionRef = useRef(false);
   const preparedNodes = useMemo<CanvasNode[]>(() => scene.nodes.filter((node) => !node.data.simulationOnly).map((node) => {
     basePositionsRef.current.set(node.id, { x: node.x, y: node.y });
     const offset = offsetsRef.current.get(node.id) ?? { x: 0, y: 0 };
@@ -906,6 +908,10 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
   };
   }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, startIds, loopGroups, conflictGroups, showStarts, showLoops, showConflicts]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
+  const nodesRef = useRef(nodes);
+  const followNodeIdRef = useRef(followNodeId);
+  useEffect(() => { nodesRef.current = nodes; }, [nodes]);
+  useEffect(() => { followNodeIdRef.current = followNodeId; }, [followNodeId]);
   useEffect(() => {
     setNodes((current) => {
       const existing = new Map(current.map((node) => [node.id, node]));
@@ -938,39 +944,56 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
   }, [instance, scene]);
 
   useEffect(() => {
-    if (!followActive || !instance) {
-      followZoomRef.current = undefined;
-      return;
-    }
-    followZoomRef.current ??= instance.getViewport().zoom;
+    if (!followActive || !instance || !stageRef.current) return undefined;
+    let frame = 0;
+    let previous = performance.now();
+    let velocityX = 0;
+    let velocityY = 0;
+    const tick = (now: number) => {
+      const elapsed = Math.max(1, Math.min(40, now - previous));
+      previous = now;
+      const targetId = followNodeIdRef.current;
+      const target = targetId ? nodesRef.current.find((node) => node.id === targetId) : undefined;
+      if (!userViewportInteractionRef.current && target && stageRef.current) {
+        const viewport = instance.getViewport();
+        const stage = stageRef.current.getBoundingClientRect();
+        const width = Number(target.measured?.width ?? target.width ?? target.style?.width ?? 0);
+        const height = Number(target.measured?.height ?? target.height ?? target.style?.height ?? 0);
+        const bounds = {
+          left: target.position.x * viewport.zoom + viewport.x,
+          right: (target.position.x + width) * viewport.zoom + viewport.x,
+          top: target.position.y * viewport.zoom + viewport.y,
+          bottom: (target.position.y + height) * viewport.zoom + viewport.y,
+        };
+        // The field always occupies the central 50% of the live viewport. Its
+        // flow-space size therefore updates immediately whenever zoom changes.
+        const safe = { left: stage.width * 0.25, right: stage.width * 0.75, top: stage.height * 0.25, bottom: stage.height * 0.75 };
+        const dx = bounds.left < safe.left ? safe.left - bounds.left : bounds.right > safe.right ? safe.right - bounds.right : 0;
+        const dy = bounds.top < safe.top ? safe.top - bounds.top : bounds.bottom > safe.bottom ? safe.bottom - bounds.bottom : 0;
+        const blend = 1 - Math.exp(-elapsed / 170);
+        const maximumSpeed = 850;
+        const desiredVelocityX = Math.max(-maximumSpeed, Math.min(maximumSpeed, dx * 3.2));
+        const desiredVelocityY = Math.max(-maximumSpeed, Math.min(maximumSpeed, dy * 3.2));
+        velocityX += (desiredVelocityX - velocityX) * blend;
+        velocityY += (desiredVelocityY - velocityY) * blend;
+        let moveX = velocityX * elapsed / 1000;
+        let moveY = velocityY * elapsed / 1000;
+        if (dx && Math.sign(moveX) === Math.sign(dx) && Math.abs(moveX) > Math.abs(dx)) moveX = dx;
+        if (dy && Math.sign(moveY) === Math.sign(dy) && Math.abs(moveY) > Math.abs(dy)) moveY = dy;
+        if (Math.abs(moveX) > 0.02 || Math.abs(moveY) > 0.02) {
+          // Read and write the current zoom in the same frame: Follow changes
+          // translation only and never restores a stale zoom value.
+          void instance.setViewport({ x: viewport.x + moveX, y: viewport.y + moveY, zoom: viewport.zoom });
+        }
+      } else {
+        velocityX = 0;
+        velocityY = 0;
+      }
+      frame = window.requestAnimationFrame(tick);
+    };
+    frame = window.requestAnimationFrame(tick);
+    return () => window.cancelAnimationFrame(frame);
   }, [followActive, instance]);
-
-  useEffect(() => {
-    if (!followActive || !instance || !stageRef.current || !activeNodeIds.size) return;
-    const active = nodes.filter((node) => activeNodeIds.has(node.id));
-    if (!active.length) return;
-    const viewport = instance.getViewport();
-    const lockedZoom = followZoomRef.current ?? viewport.zoom;
-    const stage = stageRef.current.getBoundingClientRect();
-    const bounds = active.reduce((current, node) => {
-      const width = Number(node.measured?.width ?? node.width ?? node.style?.width ?? 0);
-      const height = Number(node.measured?.height ?? node.height ?? node.style?.height ?? 0);
-      return {
-        left: Math.min(current.left, node.position.x * viewport.zoom + viewport.x),
-        right: Math.max(current.right, (node.position.x + width) * viewport.zoom + viewport.x),
-        top: Math.min(current.top, node.position.y * viewport.zoom + viewport.y),
-        bottom: Math.max(current.bottom, (node.position.y + height) * viewport.zoom + viewport.y),
-      };
-    }, { left: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY });
-    const safe = { left: stage.width * 0.25, right: stage.width * 0.75, top: stage.height * 0.25, bottom: stage.height * 0.75 };
-    let dx = bounds.left < safe.left ? safe.left - bounds.left : bounds.right > safe.right ? safe.right - bounds.right : 0;
-    let dy = bounds.top < safe.top ? safe.top - bounds.top : bounds.bottom > safe.bottom ? safe.bottom - bounds.bottom : 0;
-    if (bounds.right - bounds.left > safe.right - safe.left) dx = stage.width / 2 - (bounds.left + bounds.right) / 2;
-    if (bounds.bottom - bounds.top > safe.bottom - safe.top) dy = stage.height / 2 - (bounds.top + bounds.bottom) / 2;
-    if (Math.abs(dx) < 24) dx = 0;
-    if (Math.abs(dy) < 24) dy = 0;
-    if (dx || dy) void instance.setViewport({ x: viewport.x + dx, y: viewport.y + dy, zoom: lockedZoom }, { duration: 450 });
-  }, [activeNodeIds, followActive, instance, nodes]);
 
   const rememberPositions = useCallback((items: CanvasNode[]) => {
     items.forEach((node) => {
@@ -1060,11 +1083,8 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onInit={setInstance}
-          onMoveEnd={(event, viewport) => {
-            // Keep user-requested wheel/pinch zoom changes, while programmatic
-            // Follow pans (whose event is null) retain the current lock.
-            if (followActive && event) followZoomRef.current = viewport.zoom;
-          }}
+          onMoveStart={(event) => { if (event) userViewportInteractionRef.current = true; }}
+          onMoveEnd={() => { userViewportInteractionRef.current = false; }}
           onNodeDragStart={handleNodeDragStart}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}

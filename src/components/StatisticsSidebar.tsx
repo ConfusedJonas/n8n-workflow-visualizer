@@ -3,8 +3,6 @@ import { GitBranch, GitMerge, Network, Repeat2, SquareStack, Workflow, X } from 
 export interface WorkflowStatistics {
   nodes: number;
   connections: number;
-  nodesIncludingSubworkflows: number;
-  connectionsIncludingSubworkflows: number;
   subworkflows: number;
   subworkflowCalls: number;
   loops: number;
@@ -24,8 +22,6 @@ export function StatisticsSidebar({ name, statistics, onClose }: StatisticsSideb
   const rows = [
     { label: 'Total nodes', value: statistics.nodes, icon: Workflow },
     { label: 'Connections', value: statistics.connections, icon: Network },
-    { label: 'Nodes incl. sub-workflows', value: statistics.nodesIncludingSubworkflows, icon: Workflow },
-    { label: 'Connections incl. sub-workflows', value: statistics.connectionsIncludingSubworkflows, icon: Network },
     { label: 'Sub-workflows', value: statistics.subworkflows, detail: `${statistics.subworkflowCalls} call${statistics.subworkflowCalls === 1 ? '' : 's'}`, icon: SquareStack },
     { label: 'Loops', value: statistics.loops, icon: Repeat2 },
     { label: 'Branches', value: statistics.branches, icon: GitBranch },
@@ -46,7 +42,7 @@ export function StatisticsSidebar({ name, statistics, onClose }: StatisticsSideb
           </div>
         ))}
       </div>
-      <p className="statistics-note">End nodes are calculated from the selected main workflow only. Internal sub-workflow ends return control to their caller.</p>
+      <p className="statistics-note">All totals include resolved descendant workflows. Possible end nodes are calculated from the selected main workflow only because internal sub-workflow ends return control to their caller.</p>
       {statistics.missingDependencies ? (
         <div className="statistics-warning"><strong>{statistics.missingDependencies} unique missing</strong><span>{statistics.missingReferences} call reference{statistics.missingReferences === 1 ? '' : 's'}</span></div>
       ) : null}

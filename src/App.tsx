@@ -9,7 +9,7 @@ import type { NormalizedWorkflow, ParseDiagnostic } from './n8n/types';
 import { buildDependencyScene } from './renderers/dependencies/dependency';
 import { buildExpandedScene } from './renderers/expanded/expanded';
 import { buildOriginalScene } from './renderers/workflow/original';
-import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationSteps, type SimulationMode, type SimulationStep } from './simulation/engine';
+import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationSteps, simulationFollowTarget, type SimulationMode, type SimulationStep } from './simulation/engine';
 import {
   clearAllLocalData,
   loadUiState,
@@ -118,6 +118,7 @@ export default function App() {
   const checkpointConflict = checkpointConflicts.length > 0;
   const activeNodeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.nodeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const activeEdgeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.edgeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
+  const followNodeId = useMemo(() => simulationRunning ? simulationFollowTarget(scene, simulationPlan, simulationIndex) : undefined, [scene, simulationPlan, simulationIndex, simulationRunning]);
   const displayStartIds = useMemo(() => new Set([
     ...simulationAnalysis.starts,
     ...scene.nodes.filter((node) => node.data.boundaryEntry).map((node) => node.id),
@@ -297,18 +298,18 @@ export default function App() {
     const originalAnalysis = analyzeSimulationGraph(buildOriginalScene(workflow));
     const descendantKeys = effectiveKey ? descendantWorkflowKeys(workspace, effectiveKey) : new Set<string>();
     const descendantWorkflows = [...descendantKeys].flatMap((key) => workspace.workflows[key] ? [workspace.workflows[key]] : []);
-    const targets = new Set(workflow.subworkflowReferences.map((reference) => (
+    const descendantAnalyses = descendantWorkflows.map((item) => analyzeSimulationGraph(buildOriginalScene(item)));
+    const references = descendantWorkflows.flatMap((item) => item.subworkflowReferences);
+    const targets = new Set(references.map((reference) => (
       reference.targetWorkflowKey ?? reference.targetWorkflowId ?? reference.embeddedWorkflow?.key ?? `${reference.sourceMode}:${reference.nodeId}`
     )));
     return {
-      nodes: workflow.nodes.length,
-      connections: workflow.edges.length,
-      nodesIncludingSubworkflows: descendantWorkflows.reduce((sum, item) => sum + item.nodes.length, 0),
-      connectionsIncludingSubworkflows: descendantWorkflows.reduce((sum, item) => sum + item.edges.length, 0),
+      nodes: descendantWorkflows.reduce((sum, item) => sum + item.nodes.length, 0),
+      connections: descendantWorkflows.reduce((sum, item) => sum + item.edges.length, 0),
       subworkflows: targets.size,
-      subworkflowCalls: workflow.subworkflowReferences.length,
-      loops: originalAnalysis.loopGroups.length,
-      branches: originalAnalysis.branches.size,
+      subworkflowCalls: references.length,
+      loops: descendantAnalyses.reduce((sum, analysis) => sum + analysis.loopGroups.length, 0),
+      branches: descendantAnalyses.reduce((sum, analysis) => sum + analysis.branches.size, 0),
       endNodes: originalAnalysis.ends.size,
       missingDependencies: missingTargetIds.size,
       missingReferences: missing.length,
@@ -403,6 +404,7 @@ export default function App() {
               showLoops={showLoops}
               showConflicts={showConflicts}
               followActive={followSimulation && simulationRunning}
+              followNodeId={followNodeId}
             />
             {exportError ? <div className="toast error"><Info size={16} />{exportError}<button onClick={() => setExportError(undefined)} aria-label="Dismiss"><X size={15} /></button></div> : null}
           </>

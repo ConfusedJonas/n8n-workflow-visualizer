@@ -387,6 +387,67 @@ export function buildSimulationPlan(scene: GraphScene, mode: SimulationMode, che
   return buildSimulationSteps(scene, mode, checkpoints, random).flatMap((step) => step.nodeIds);
 }
 
+/**
+ * Selects a stable camera target from the already-built execution plan. When
+ * parallel branches are active (or about to become active), the branch whose
+ * exclusive work lasts longest wins. A small look-ahead keeps the camera
+ * moving toward upcoming work instead of hopping once per animation step.
+ */
+export function simulationFollowTarget(
+  scene: GraphScene,
+  plan: SimulationStep[],
+  index: number,
+  lookAhead = 4,
+): string | undefined {
+  const current = plan[index];
+  if (!current?.nodeIds.length) return undefined;
+  const ids = executableNodeIds(scene);
+  const outgoing = outgoingMap(ids, executionEdges(scene));
+  const reachableCache = new Map<string, Set<string>>();
+  const reachable = (id: string) => {
+    const cached = reachableCache.get(id);
+    if (cached) return cached;
+    const result = reachableNodes([id], outgoing);
+    result.add(id);
+    reachableCache.set(id, result);
+    return result;
+  };
+
+  let branchCandidates = [...current.nodeIds];
+  if (branchCandidates.length === 1) {
+    const rootReachable = reachable(branchCandidates[0]);
+    for (let stepIndex = index + 1; stepIndex < plan.length; stepIndex += 1) {
+      const candidates = plan[stepIndex].nodeIds.filter((id) => rootReachable.has(id));
+      if (candidates.length > 1) {
+        branchCandidates = candidates;
+        break;
+      }
+      if (stepIndex - index >= lookAhead) break;
+    }
+  }
+
+  const exclusiveLastStep = (candidate: string) => {
+    const candidateReachable = reachable(candidate);
+    const otherReachable = branchCandidates
+      .filter((id) => id !== candidate)
+      .map((id) => reachable(id));
+    let last = index;
+    for (let stepIndex = index; stepIndex < plan.length; stepIndex += 1) {
+      if (plan[stepIndex].nodeIds.some((id) => candidateReachable.has(id) && !otherReachable.some((set) => set.has(id)))) last = stepIndex;
+    }
+    return last;
+  };
+  const focus = [...branchCandidates].sort((left, right) => exclusiveLastStep(right) - exclusiveLastStep(left) || left.localeCompare(right))[0];
+  const focusReachable = reachable(focus);
+  const focusExclusive = (id: string) => !branchCandidates.some((candidate) => candidate !== focus && reachable(candidate).has(id));
+  let target = focus;
+  for (let stepIndex = index + 1; stepIndex <= Math.min(plan.length - 1, index + lookAhead); stepIndex += 1) {
+    const candidates = plan[stepIndex].nodeIds.filter((id) => focusReachable.has(id) && focusExclusive(id));
+    if (candidates.length) target = candidates.sort()[0];
+  }
+  return target;
+}
+
 export function analyzeCheckpointConflicts(scene: GraphScene, checkpoints: Set<string>): CheckpointConflictGroup[] {
   if (checkpoints.size < 2) return [];
   const ids = executableNodeIds(scene);

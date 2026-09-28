@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphScene } from '../src/renderers/scene';
-import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict } from '../src/simulation/engine';
+import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict, simulationFollowTarget } from '../src/simulation/engine';
 import { parseN8nDocument } from '../src/n8n/parser';
 import { buildExpandedScene } from '../src/renderers/expanded/expanded';
 import { createWorkspace } from '../src/workspace/resolve';
@@ -77,6 +77,43 @@ describe('workflow simulation', () => {
       ],
     };
     expect(buildSimulationPlan(scene, 'all', new Set(), () => 0)).toEqual(['start', 'branch', 'loop-body', 'branch', 'terminal']);
+  });
+
+  it('exhausts loop bodies before exits across parallel branches in All mode', () => {
+    const nodeIds = ['start', 'merge', 'end'];
+    const edges = [];
+    for (let index = 1; index <= 4; index += 1) {
+      nodeIds.push(`loop-${index}`, `body-${index}`, `done-${index}`);
+      edges.push(
+        edge(`fan-${index}`, 'start', `loop-${index}`),
+        edge(`done-${index}`, `loop-${index}`, `done-${index}`, 0),
+        edge(`body-${index}`, `loop-${index}`, `body-${index}`, 1),
+        edge(`return-${index}`, `body-${index}`, `loop-${index}`),
+        edge(`join-${index}`, `done-${index}`, 'merge'),
+      );
+    }
+    edges.push(edge('finish', 'merge', 'end'));
+    const plan = buildSimulationPlan({ nodes: nodeIds.map(node), edges }, 'all', new Set(), () => 0);
+    for (let index = 1; index <= 4; index += 1) {
+      expect(plan.indexOf(`body-${index}`)).toBeGreaterThan(-1);
+      expect(plan.indexOf(`body-${index}`)).toBeLessThan(plan.indexOf(`done-${index}`));
+    }
+    expect(plan.at(-1)).toBe('end');
+  });
+
+  it('looks ahead along the longest active parallel branch for Follow mode', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'short', 'long-one', 'long-two', 'merge', 'end'].map(node),
+      edges: [
+        edge('a', 'start', 'short'), edge('b', 'start', 'long-one'),
+        edge('c', 'short', 'merge'), edge('d', 'long-one', 'long-two'),
+        edge('e', 'long-two', 'merge'), edge('f', 'merge', 'end'),
+      ],
+    };
+    const plan = buildSimulationSteps(scene, 'all', new Set(), () => 0);
+    expect(plan[1].nodeIds.sort()).toEqual(['long-one', 'short']);
+    expect(simulationFollowTarget(scene, plan, 0)).toBe('long-two');
+    expect(simulationFollowTarget(scene, plan, 1)).toBe('long-two');
   });
 
   it('traverses a loop only once before using an available exit', () => {

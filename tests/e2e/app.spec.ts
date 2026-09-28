@@ -116,8 +116,8 @@ test('shows workflow statistics and clears checkpoints when Random mode is selec
   const statistics = page.getByRole('complementary', { name: 'Workflow statistics' });
   await expect(statistics).toBeVisible();
   await expect(statistics).toContainText('Total nodes');
-  await expect(statistics).toContainText('Nodes incl. sub-workflows');
-  await expect(statistics).toContainText('Connections incl. sub-workflows');
+  await expect(statistics).not.toContainText('Nodes incl. sub-workflows');
+  await expect(statistics).not.toContainText('Connections incl. sub-workflows');
   await expect(statistics).toContainText('Possible end nodes');
   await expect(statistics).toContainText('1 unique missing');
   await page.getByRole('button', { name: 'Close statistics' }).click();
@@ -204,6 +204,11 @@ test('animates expanded workflow entries in parallel and keeps the executed trai
   ]);
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByText('Content Operations', { exact: true }).first().click();
+  await page.getByRole('button', { name: 'Statistics', exact: true }).click();
+  const familyStatistics = page.getByRole('complementary', { name: 'Workflow statistics' });
+  await expect(familyStatistics.locator('.statistic').filter({ hasText: 'Total nodes' }).locator('b')).toHaveText('10');
+  await expect(familyStatistics.locator('.statistic').filter({ hasText: 'Connections' }).locator('b')).toHaveText('9');
+  await page.getByRole('button', { name: 'Close statistics' }).click();
   await page.getByRole('button', { name: 'Reset view' }).click();
   await page.waitForTimeout(350);
   const zoomBeforeFollow = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
@@ -216,8 +221,17 @@ test('animates expanded workflow entries in parallel and keeps the executed trai
   expect(activeLabels.sort()).toEqual(['Build outline', 'Research context']);
   const zoomDuringFollow = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
   expect(zoomDuringFollow).toBeCloseTo(zoomBeforeFollow, 5);
+  const stageBox = await page.getByTestId('graph-stage').boundingBox();
+  if (!stageBox) throw new Error('Graph stage geometry was unavailable.');
+  await page.mouse.move(stageBox.x + stageBox.width / 2, stageBox.y + stageBox.height / 2);
+  await page.mouse.wheel(0, -420);
+  await page.waitForTimeout(220);
+  const manuallyChangedZoom = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  expect(manuallyChangedZoom).toBeGreaterThan(zoomDuringFollow);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(4);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1, { timeout: 1500 });
+  const zoomAfterNextFollowStep = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  expect(zoomAfterNextFollowStep).toBeCloseTo(manuallyChangedZoom, 5);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(5);
 });
 

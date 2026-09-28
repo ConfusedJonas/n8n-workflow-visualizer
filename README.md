@@ -19,7 +19,7 @@ A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import s
 - Includes four simulation modes: **Random** chooses branches, **Custom** routes toward one or more checkpoints, **All** favors the route with the greatest reachable node coverage, and **Shortest** finds the fewest-node route to one selected destination. Conflicting Custom checkpoints can be highlighted as separately numbered branch groups.
 - Offers Repeat and Follow controls. Follow smoothly pans—without changing zoom—only when active nodes leave the central 50% of the visible canvas.
 - Highlights missing calls with a pulse, possible start nodes on demand, and gives each distinct loop a numbered color indicator. Missing-dependency messages report both unique workflow IDs and total call references.
-- Provides an optional right-hand statistics panel with node and connection totals for both the selected workflow and all resolved descendants, plus sub-workflow, loop, branch, and main-workflow end-node counts.
+- Provides an optional right-hand statistics panel whose node, connection, sub-workflow, loop, and branch totals include all resolved descendants. Possible end nodes remain scoped to the selected main workflow.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
 - Routes orthogonal connections around node bodies while retaining every exported output and input index.
