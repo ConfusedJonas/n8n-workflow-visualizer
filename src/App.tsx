@@ -1,13 +1,15 @@
 import '@xyflow/react/dist/style.css';
-import { Download, Flag, FolderOpen, Info, Layers3, Network, Play, RefreshCw, Repeat2, Shuffle, Square, Upload, X } from 'lucide-react';
+import { BarChart3, Download, Flag, FolderOpen, Info, Layers3, Network, Play, RefreshCw, Repeat2, Route, ScanSearch, Shuffle, Square, Upload, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GraphCanvas, type GraphCanvasHandle } from './components/GraphCanvas';
 import { Sidebar } from './components/Sidebar';
+import { StatisticsSidebar, type WorkflowStatistics } from './components/StatisticsSidebar';
 import { parseN8nJson } from './n8n/parser';
 import type { NormalizedWorkflow, ParseDiagnostic } from './n8n/types';
 import { buildDependencyScene } from './renderers/dependencies/dependency';
 import { buildExpandedScene } from './renderers/expanded/expanded';
-import { analyzeSimulationGraph, buildSimulationSteps, checkpointsMayConflict, type SimulationMode, type SimulationStep } from './simulation/engine';
+import { buildOriginalScene } from './renderers/workflow/original';
+import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationSteps, type SimulationMode, type SimulationStep } from './simulation/engine';
 import {
   clearAllLocalData,
   loadUiState,
@@ -58,6 +60,9 @@ export default function App() {
   const [executedEdgeIds, setExecutedEdgeIds] = useState<Set<string>>(new Set());
   const [showStarts, setShowStarts] = useState(false);
   const [showLoops, setShowLoops] = useState(false);
+  const [showConflicts, setShowConflicts] = useState(false);
+  const [followSimulation, setFollowSimulation] = useState(false);
+  const [showStatistics, setShowStatistics] = useState(false);
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [busy, setBusy] = useState(true);
   const [exportError, setExportError] = useState<string>();
@@ -107,7 +112,8 @@ export default function App() {
   }, [workflow, effectiveKey, view, workspace, collapsedPaths]);
 
   const simulationAnalysis = useMemo(() => analyzeSimulationGraph(scene), [scene]);
-  const checkpointConflict = useMemo(() => checkpointsMayConflict(scene, checkpoints), [scene, checkpoints]);
+  const checkpointConflicts = useMemo(() => simulationMode === 'custom' ? analyzeCheckpointConflicts(scene, checkpoints) : [], [scene, checkpoints, simulationMode]);
+  const checkpointConflict = checkpointConflicts.length > 0;
   const activeNodeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.nodeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const activeEdgeIds = useMemo(() => new Set(simulationRunning ? simulationPlan[simulationIndex]?.edgeIds ?? [] : []), [simulationRunning, simulationPlan, simulationIndex]);
   const displayStartIds = useMemo(() => new Set([
@@ -121,6 +127,10 @@ export default function App() {
       return retained.length === current.size ? current : new Set(retained);
     });
   }, [scene]);
+
+  useEffect(() => {
+    if (!checkpointConflict) setShowConflicts(false);
+  }, [checkpointConflict]);
 
   useEffect(() => {
     if (!simulationRunning) return;
@@ -236,11 +246,11 @@ export default function App() {
   }, [scene]);
 
   const toggleCheckpoint = useCallback((id: string) => {
-    if (view !== 'view' || simulationMode !== 'custom' || simulationRunning) return;
+    if (view !== 'view' || !['custom', 'shortest'].includes(simulationMode) || simulationRunning) return;
     const candidate = scene.nodes.find((node) => node.id === id);
     if (!candidate || !['workflow', 'placeholder', 'port'].includes(candidate.kind)) return;
     setCheckpoints((current) => {
-      const next = new Set(current);
+      const next = simulationMode === 'shortest' ? new Set<string>() : new Set(current);
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
@@ -272,11 +282,30 @@ export default function App() {
   };
 
   const missing = getMissingReferences(workspace, effectiveKey);
+  const missingTargetIds = new Set(missing.flatMap((reference) => reference.targetWorkflowId ? [reference.targetWorkflowId] : []));
   const diagnostics = workflow?.diagnostics ?? [];
+  const statistics = useMemo<WorkflowStatistics | undefined>(() => {
+    if (!workflow) return undefined;
+    const originalAnalysis = analyzeSimulationGraph(buildOriginalScene(workflow));
+    const targets = new Set(workflow.subworkflowReferences.map((reference) => (
+      reference.targetWorkflowKey ?? reference.targetWorkflowId ?? reference.embeddedWorkflow?.key ?? `${reference.sourceMode}:${reference.nodeId}`
+    )));
+    return {
+      nodes: workflow.nodes.length,
+      connections: workflow.edges.length,
+      subworkflows: targets.size,
+      subworkflowCalls: workflow.subworkflowReferences.length,
+      loops: originalAnalysis.loopGroups.length,
+      branches: originalAnalysis.branches.size,
+      endNodes: originalAnalysis.ends.size,
+      missingDependencies: missingTargetIds.size,
+      missingReferences: missing.length,
+    };
+  }, [workflow, missing.length, missingTargetIds.size]);
 
   return (
     <main
-      className={`app-shell ${dragging ? 'is-dragging' : ''}`}
+      className={`app-shell ${dragging ? 'is-dragging' : ''} ${showStatistics && workflow ? 'has-statistics' : ''}`}
       onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
       onDragOver={(event) => event.preventDefault()}
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
@@ -295,6 +324,7 @@ export default function App() {
             <button type="button" className="button primary" onClick={() => fileRef.current?.click()}><Upload size={16} /> Import JSON</button>
             {workflow ? <>
               <div className="export-menu"><Download size={15} /><button type="button" onClick={() => void runExport('png')}>PNG</button><button type="button" onClick={() => void runExport('svg')}>SVG</button></div>
+              <button type="button" className={`button ${showStatistics ? 'is-active' : ''}`} aria-pressed={showStatistics} onClick={() => setShowStatistics((value) => !value)}><BarChart3 size={15} /> Statistics</button>
             </> : null}
           </div>
         </header>
@@ -308,30 +338,37 @@ export default function App() {
               </div>
               <div className="view-status">
                 {view === 'view' ? <div className="expand-actions"><button className="text-button" type="button" onClick={expandAll}>Expand all</button><button className="text-button" type="button" onClick={collapseEveryWorkflow}>Collapse all</button></div> : null}
-                {missing.length ? <>
+                {missingTargetIds.size ? <>
                   <label className="highlight-toggle" title="Highlight workflow call nodes whose dependencies are missing"><input type="checkbox" checked={highlightMissing} onChange={(event) => setHighlightMissing(event.target.checked)} /><span /> Highlight missing</label>
-                  <button className="warning-pill warning-link" type="button" onClick={() => setView('dependency')}>{missing.length} missing dependenc{missing.length === 1 ? 'y' : 'ies'} · Click to view</button>
+                  <button className="warning-pill warning-link" type="button" onClick={() => setView('dependency')}>{missingTargetIds.size} unique missing dependenc{missingTargetIds.size === 1 ? 'y' : 'ies'} · {missing.length} reference{missing.length === 1 ? '' : 's'} · Click to view</button>
                 </> : null}
                 {diagnostics.length ? <span className="diagnostic-pill">{diagnostics.length} parser note{diagnostics.length === 1 ? '' : 's'}</span> : null}
               </div>
             </div>
             <div className={`simulation-bar ${view !== 'view' ? 'is-hidden' : ''}`}>
               <div className="simulation-primary">
-                <button className={`button simulation-run ${simulationRunning ? 'is-running' : ''}`} type="button" onClick={simulationRunning ? stopSimulation : startSimulation}>
+                <button className={`button simulation-run ${simulationRunning ? 'is-running' : ''}`} type="button" disabled={!simulationRunning && simulationMode === 'shortest' && checkpoints.size !== 1} title={simulationMode === 'shortest' && checkpoints.size !== 1 ? 'Select one destination node first' : undefined} onClick={simulationRunning ? stopSimulation : startSimulation}>
                   {simulationRunning ? <Square size={14} /> : <Play size={14} />}{simulationRunning ? 'Stop' : 'Simulate'}
                 </button>
                 <label>Speed<select value={simulationSpeed} onChange={(event) => setSimulationSpeed(Number(event.target.value))}><option value={250}>Fast · 0.25s</option><option value={700}>Normal · 0.7s</option><option value={1400}>Slow · 1.4s</option><option value={2500}>Very slow · 2.5s</option></select></label>
                 <div className="mode-switch" aria-label="Simulation mode">
-                  <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
+                  <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
                   <button type="button" className={simulationMode === 'custom' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationMode('custom'); }}><Flag size={13} /> Custom</button>
+                  <button type="button" className={simulationMode === 'all' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('all'); }}><ScanSearch size={13} /> All</button>
+                  <button type="button" className={simulationMode === 'shortest' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('shortest'); }}><Route size={13} /> Shortest</button>
                 </div>
                 <button type="button" aria-pressed={repeatSimulation} className={`repeat-toggle ${repeatSimulation ? 'is-active' : ''}`} onClick={() => setRepeatSimulation((value) => !value)} title="Automatically start a new simulation when the current one finishes"><RefreshCw size={13} /> Repeat</button>
-                {simulationMode === 'custom' ? <span className="checkpoint-help">Click nodes to set checkpoints · {checkpoints.size} selected <button type="button" onClick={() => setCheckpoints(new Set())}>Clear</button></span> : <span className="checkpoint-help">Branches are chosen randomly.</span>}
+                <button type="button" aria-pressed={followSimulation} className={`repeat-toggle ${followSimulation ? 'is-active' : ''}`} onClick={() => setFollowSimulation((value) => !value)} title="Smoothly pan when active nodes leave the central viewing area"><ScanSearch size={13} /> Follow</button>
+                {simulationMode === 'custom' ? <span className="checkpoint-help">Click nodes to set checkpoints · {checkpoints.size} selected <button className="checkpoint-clear" type="button" onClick={() => setCheckpoints(new Set())}>Clear</button></span>
+                  : simulationMode === 'shortest' ? <span className="checkpoint-help">{checkpoints.size ? 'Destination selected' : 'Click one destination node'} {checkpoints.size ? <button className="checkpoint-clear" type="button" onClick={() => setCheckpoints(new Set())}>Clear</button> : null}</span>
+                    : simulationMode === 'all' ? <span className="checkpoint-help">Chooses the route with the greatest reachable node coverage.</span>
+                      : <span className="checkpoint-help">Branches are chosen randomly.</span>}
               </div>
               <div className="simulation-overlays" aria-label="Simulation highlights">
                 <span>Highlights:</span>
                 <button type="button" aria-pressed={showStarts} className={showStarts ? 'is-active' : ''} onClick={() => setShowStarts((value) => !value)}>Start nodes</button>
                 <button type="button" aria-pressed={showLoops} className={showLoops ? 'is-active' : ''} onClick={() => setShowLoops((value) => !value)}><Repeat2 size={12} /> Individual loops</button>
+                {checkpointConflict ? <button type="button" aria-pressed={showConflicts} className={showConflicts ? 'is-active' : ''} onClick={() => setShowConflicts((value) => !value)}><Flag size={12} /> Conflicting branches</button> : null}
                 {checkpointConflict ? <span className="simulation-note">Some checkpoints conflict; one compatible branch will be chosen randomly.</span> : null}
               </div>
             </div>
@@ -348,8 +385,11 @@ export default function App() {
               checkpointIds={checkpoints}
               startIds={displayStartIds}
               loopGroups={simulationAnalysis.loopGroups}
+              conflictGroups={checkpointConflicts}
               showStarts={showStarts}
               showLoops={showLoops}
+              showConflicts={showConflicts}
+              followActive={followSimulation && simulationRunning}
             />
             {exportError ? <div className="toast error"><Info size={16} />{exportError}<button onClick={() => setExportError(undefined)} aria-label="Dismiss"><X size={15} /></button></div> : null}
           </>
@@ -363,6 +403,7 @@ export default function App() {
           </section>
         )}
       </section>
+      {showStatistics && workflow && statistics ? <StatisticsSidebar name={workflow.name} statistics={statistics} onClose={() => setShowStatistics(false)} /> : null}
       {dragging ? <div className="drop-overlay"><Upload size={34} /><strong>Drop JSON workflows to import</strong><span>Valid files are kept even when another file fails.</span></div> : null}
       {importResults.length ? (
         <aside className="import-panel" role="dialog" aria-label="Import results">

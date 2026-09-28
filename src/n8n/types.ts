@@ -100,6 +100,7 @@ export interface WorkflowFamily {
   workflowKeys: string[];
   roots: string[];
   missingTargetIds: string[];
+  missingReferenceCount: number;
   cyclic: boolean;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GraphScene } from '../src/renderers/scene';
-import { analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict } from '../src/simulation/engine';
+import { analyzeCheckpointConflicts, analyzeSimulationGraph, buildSimulationPlan, buildSimulationSteps, checkpointsMayConflict } from '../src/simulation/engine';
 import { parseN8nDocument } from '../src/n8n/parser';
 import { buildExpandedScene } from '../src/renderers/expanded/expanded';
 import { createWorkspace } from '../src/workspace/resolve';
@@ -29,6 +29,41 @@ describe('workflow simulation', () => {
     };
     expect(buildSimulationPlan(scene, 'custom', new Set(['right']), () => 0)).toEqual(['start', 'branch', 'right']);
     expect(checkpointsMayConflict(scene, new Set(['left', 'right']))).toBe(true);
+  });
+
+  it('does not report sequential checkpoints after reconverging branches as conflicting', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'branch', 'left', 'right', 'merge', 'child-one', 'child-two'].map(node),
+      edges: [
+        edge('a', 'start', 'branch'),
+        edge('b', 'branch', 'left', 0), edge('c', 'branch', 'right', 1),
+        edge('d', 'left', 'merge'), edge('e', 'right', 'merge'),
+        edge('f', 'merge', 'child-one'), edge('g', 'child-one', 'child-two'),
+      ],
+    };
+    expect(analyzeCheckpointConflicts(scene, new Set(['child-one', 'child-two']))).toEqual([]);
+  });
+
+  it('finds a shortest route to one destination and stops there', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'branch', 'long-one', 'long-two', 'destination', 'after'].map(node),
+      edges: [
+        edge('a', 'start', 'branch'), edge('b', 'branch', 'long-one', 0), edge('c', 'branch', 'destination', 1),
+        edge('d', 'long-one', 'long-two'), edge('e', 'long-two', 'destination'), edge('f', 'destination', 'after'),
+      ],
+    };
+    expect(buildSimulationPlan(scene, 'shortest', new Set(['destination']), () => 0)).toEqual(['start', 'branch', 'destination']);
+  });
+
+  it('uses the branch with greatest unvisited coverage in All mode', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'branch', 'short', 'long-one', 'long-two', 'long-three'].map(node),
+      edges: [
+        edge('a', 'start', 'branch'), edge('b', 'branch', 'short', 0), edge('c', 'branch', 'long-one', 1),
+        edge('d', 'long-one', 'long-two'), edge('e', 'long-two', 'long-three'),
+      ],
+    };
+    expect(buildSimulationPlan(scene, 'all', new Set(), () => 0)).toEqual(['start', 'branch', 'long-one', 'long-two', 'long-three']);
   });
 
   it('traverses a loop only once before using an available exit', () => {

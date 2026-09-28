@@ -17,6 +17,7 @@ describe('workspace resolution', () => {
     const missing = createWorkspace(parse(mainWorkflow('not-imported')));
     expect(getMissingReferences(missing)).toHaveLength(1);
     expect(missing.families[0].missingTargetIds).toEqual(['not-imported']);
+    expect(missing.families[0].missingReferenceCount).toBe(1);
   });
 
   it('uses deterministic last-record replacement and shared children', () => {

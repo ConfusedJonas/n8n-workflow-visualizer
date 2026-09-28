@@ -1,6 +1,6 @@
 # n8n Workflow Visualizer
 
-A private-by-default, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect and rearrange their exported layout, map parent/child dependencies, expand static sub-workflow calls inline, or animate a graph-only execution simulation.
+A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect and rearrange their exported layout, map parent/child dependencies, expand static sub-workflow calls inline, or animate a graph-only execution simulation.
 
 ![Expanded synthetic workflow family](docs/assets/readme.png)
 
@@ -15,8 +15,11 @@ A private-by-default, browser-only visualizer for n8n workflow JSON exports. Imp
   - **Dependency** — deterministic Dagre layout for the selected workflow family, including clickable missing-dependency warnings.
 - Connects external edges only to expanded workflow boundaries. Possible internal starts can be highlighted on demand; internal end nodes remain visually unchanged, with no cross-boundary lines or port circles.
 - Supports free node movement, multi-selection, camera reset, and restoring every node to its exported/generated location.
-- Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Expanded workflows wait for every active internal branch before releasing one continuation to the caller. Random mode chooses branches; Custom mode routes toward selectable checkpoints and explains conflicting choices. Each branching node tries every output at most once before it can revisit a route leading to another unused branch or requested checkpoint, so loop exits remain reachable. An optional Repeat toggle starts a fresh simulation automatically.
-- Highlights missing calls with a pulse, possible start nodes on demand, and gives each distinct loop a numbered color indicator.
+- Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Expanded workflows wait for every active internal branch before releasing one continuation to the caller.
+- Includes four simulation modes: **Random** chooses branches, **Custom** routes toward one or more checkpoints, **All** favors the route with the greatest reachable node coverage, and **Shortest** finds the fewest-node route to one selected destination. Conflicting Custom checkpoints can be highlighted as separately numbered branch groups.
+- Offers Repeat and Follow controls. Follow smoothly pans—without changing zoom—only when active nodes leave the central 75% of the visible canvas.
+- Highlights missing calls with a pulse, possible start nodes on demand, and gives each distinct loop a numbered color indicator. Missing-dependency messages report both unique workflow IDs and total call references.
+- Provides an optional right-hand statistics panel with node, connection, sub-workflow, loop, branch, and main-workflow end-node counts.
 - Saves raw imports and UI state in IndexedDB, then reparses raw data with the current parser when restored.
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
 - Routes orthogonal connections around node bodies while retaining every exported output and input index.
@@ -33,6 +36,16 @@ npm run dev
 ```
 
 The sample is synthetic and contains no user workflow data. Real exports supplied during development were used only for local smoke testing and are not present in this repository.
+
+## Using the viewer
+
+1. Select **Import JSON** (or drag JSON exports onto the window). Import a parent workflow and any static database-ID sub-workflows you want resolved.
+2. Use **View** to inspect or expand workflow calls. Click an expanded boundary to collapse it, or a collapsed Execute Workflow node to expand it. Drag nodes freely, Ctrl-click to select several, and use the lower-left reset controls to restore the camera or exported node positions.
+3. Use **Dependency** to see the workflow family and unresolved calls. Missing warnings are clickable, and the Highlight missing toggle makes unresolved calls pulse.
+4. Choose a simulation mode and speed. In Custom mode, click nodes to add checkpoints. In Shortest mode, click one destination. Simulation is structural only: it follows connections and never runs n8n node logic.
+5. Open **Statistics** for a summary of the selected workflow, or export the full graph bounds as PNG/SVG.
+
+Imported workflows and UI state are stored only in that browser profile. **Clear all local data** removes the application’s IndexedDB stores.
 
 ## Development
 
@@ -67,7 +80,9 @@ The repository includes a Pages workflow, but deployment is gated and disabled b
 
 The Vite base path is derived from `GITHUB_REPOSITORY`, so a repository rename is handled on the next build. Be aware that a Pages site can be public even when its source repository is private, and private-repository Pages availability depends on the GitHub plan.
 
-## Scope
+## Security and scope
+
+The repository contains only synthetic examples and screenshots. No credentials, API keys, environment files, user workflow exports, analytics, telemetry, or runtime network integrations are required. Imported Markdown is sanitized, raw HTML is disabled, remote media is blocked, and workflow URL/file references are displayed but never opened automatically.
 
 V1 does not support `.n8np` archives, changing workflow definitions, node inspectors, manual mapping for dynamic references, external workflow lookup, or real workflow execution. Dragged positions are viewer-only and are not written back to imported JSON.
 

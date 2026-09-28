@@ -1,6 +1,13 @@
 import type { GraphScene, SceneEdge } from '../renderers/scene';
 
-export type SimulationMode = 'random' | 'custom';
+export type SimulationMode = 'random' | 'custom' | 'all' | 'shortest';
+
+export interface CheckpointConflictGroup {
+  branchNodeId: string;
+  checkpointIds: string[];
+  nodeIds: string[];
+  edgeIds: string[];
+}
 
 export interface SimulationAnalysis {
   starts: Set<string>;
@@ -184,6 +191,18 @@ function shortestDistance(starts: string[], targets: Set<string>, outgoing: Map<
   return Number.POSITIVE_INFINITY;
 }
 
+function reachableNodes(starts: string[], outgoing: Map<string, SceneEdge[]>, blockedNode?: string): Set<string> {
+  const found = new Set<string>();
+  const queue = [...starts];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (found.has(id) || id === blockedNode) continue;
+    found.add(id);
+    (outgoing.get(id) ?? []).forEach((edge) => queue.push(edge.target));
+  }
+  return found;
+}
+
 function untriedBranchDistance(
   group: SceneEdge[],
   outgoing: Map<string, SceneEdge[]>,
@@ -213,6 +232,7 @@ function selectOutputGroup(
   outgoing: Map<string, SceneEdge[]>,
   usedOutputs: Map<string, Set<number>>,
   remaining: Set<string>,
+  visits: Map<string, number>,
   mode: SimulationMode,
   random: () => number,
 ): SceneEdge[] | undefined {
@@ -233,10 +253,17 @@ function selectOutputGroup(
   }
   if (!candidates.length) return undefined;
 
-  if (mode === 'custom' && remaining.size) {
+  if ((mode === 'custom' || mode === 'shortest') && remaining.size) {
     const distances = candidates.map((group) => shortestDistance(group.map((edge) => edge.target), remaining, outgoing, nodeId));
     const nearest = Math.min(...distances);
     if (nearest < Number.POSITIVE_INFINITY) candidates = candidates.filter((_group, index) => distances[index] === nearest);
+  } else if (mode === 'all') {
+    const scores = candidates.map((group) => {
+      const reachable = reachableNodes(group.map((edge) => edge.target), outgoing, nodeId);
+      return [...reachable].reduce((score, id) => score + ((visits.get(id) ?? 0) === 0 ? 1 : 0), 0);
+    });
+    const best = Math.max(...scores);
+    candidates = candidates.filter((_group, index) => scores[index] === best);
   } else if (!fresh.length) {
     const distances = candidates.map((group) => untriedBranchDistance(group, outgoing, usedOutputs, nodeId));
     const nearest = Math.min(...distances);
@@ -273,7 +300,13 @@ export function buildSimulationSteps(
   const usedOutputs = new Map<string, Set<number>>();
 
   const waiting = new Map<string, SimulationToken[]>();
-  [...analysis.starts].sort().forEach((id) => waiting.set(id, [{
+  let startingIds = [...analysis.starts].sort();
+  if (mode === 'shortest' && remaining.size) {
+    const distances = startingIds.map((id) => shortestDistance([id], remaining, outgoing));
+    const nearest = Math.min(...distances);
+    startingIds = startingIds.filter((_id, index) => distances[index] === nearest).slice(0, 1);
+  }
+  startingIds.forEach((id) => waiting.set(id, [{
     id,
     path: [],
     boundaries: [...((nodeById.get(id)?.data.simulationBoundaries as string[] | undefined) ?? [])],
@@ -325,7 +358,8 @@ export function buildSimulationSteps(
       const path = [...token.path, id];
       const mergedBoundaries = [...new Set(tokens.flatMap((item) => item.boundaries))];
 
-      const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, mode, random);
+      if (mode === 'shortest' && checkpoints.has(id)) continue;
+      const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, visits, mode, random);
       if (!selectedGroup) continue;
       for (const edge of selectedGroup) {
         let boundaries = mergedBoundaries;
@@ -346,14 +380,56 @@ export function buildSimulationPlan(scene: GraphScene, mode: SimulationMode, che
   return buildSimulationSteps(scene, mode, checkpoints, random).flatMap((step) => step.nodeIds);
 }
 
-export function checkpointsMayConflict(scene: GraphScene, checkpoints: Set<string>): boolean {
-  if (checkpoints.size < 2) return false;
+export function analyzeCheckpointConflicts(scene: GraphScene, checkpoints: Set<string>): CheckpointConflictGroup[] {
+  if (checkpoints.size < 2) return [];
   const ids = executableNodeIds(scene);
-  const outgoing = outgoingMap(ids, executionEdges(scene));
+  const edges = executionEdges(scene);
+  const outgoing = outgoingMap(ids, edges);
+  const result: CheckpointConflictGroup[] = [];
   for (const id of analyzeSimulationGraph(scene).branches) {
     const groups = groupedOutputs(outgoing.get(id) ?? []);
-    const checkpointGroups = groups.filter((group) => group.some((edge) => reachableCheckpoints(edge.target, outgoing, checkpoints).size > 0));
-    if (checkpointGroups.length > 1) return true;
+    const reachableByGroup = groups.map((group) => {
+      const found = new Set<string>();
+      group.forEach((edge) => reachableCheckpoints(edge.target, outgoing, checkpoints).forEach((checkpoint) => found.add(checkpoint)));
+      return found;
+    });
+    const conflicting = new Set<string>();
+    for (const left of checkpoints) {
+      for (const right of checkpoints) {
+        if (left >= right || canReach(left, right, outgoing) || canReach(right, left, outgoing)) continue;
+        const leftGroups = reachableByGroup.flatMap((found, index) => found.has(left) ? [index] : []);
+        const rightGroups = reachableByGroup.flatMap((found, index) => found.has(right) ? [index] : []);
+        if (leftGroups.length && rightGroups.length && !leftGroups.some((index) => rightGroups.includes(index))) {
+          conflicting.add(left);
+          conflicting.add(right);
+        }
+      }
+    }
+    if (!conflicting.size) continue;
+
+    const involved = groups.filter((_group, index) => [...conflicting].some((checkpoint) => reachableByGroup[index].has(checkpoint)));
+    const reachableSets = involved.map((group) => reachableNodes(group.map((edge) => edge.target), outgoing, id));
+    const common = new Set(reachableSets[0] ?? []);
+    for (const set of reachableSets.slice(1)) {
+      for (const nodeId of [...common]) if (!set.has(nodeId)) common.delete(nodeId);
+    }
+    const branchNodes = new Set<string>([id]);
+    reachableSets.forEach((set) => set.forEach((nodeId) => { if (!common.has(nodeId)) branchNodes.add(nodeId); }));
+    const involvedOutputIndexes = new Set(involved.map((group) => group[0].outputIndex));
+    const edgeIds = edges.filter((edge) => (
+      (edge.source === id && involvedOutputIndexes.has(edge.outputIndex))
+      || (branchNodes.has(edge.source) && (branchNodes.has(edge.target) || common.has(edge.target)))
+    )).map((edge) => edge.id);
+    result.push({
+      branchNodeId: id,
+      checkpointIds: [...conflicting].sort(),
+      nodeIds: [...branchNodes].sort(),
+      edgeIds: [...new Set(edgeIds)].sort(),
+    });
   }
-  return false;
+  return result.sort((left, right) => left.branchNodeId.localeCompare(right.branchNodeId));
+}
+
+export function checkpointsMayConflict(scene: GraphScene, checkpoints: Set<string>): boolean {
+  return analyzeCheckpointConflicts(scene, checkpoints).length > 0;
 }

@@ -28,6 +28,7 @@ function connectedComponents(workflows: Record<string, NormalizedWorkflow>): Wor
   const adjacency = new Map<string, Set<string>>();
   const outgoing = new Map<string, Set<string>>();
   const missingByWorkflow = new Map<string, Set<string>>();
+  const missingReferencesByWorkflow = new Map<string, number>();
   const incoming = new Map<string, number>();
 
   for (const key of Object.keys(workflows)) {
@@ -45,10 +46,11 @@ function connectedComponents(workflows: Record<string, NormalizedWorkflow>): Wor
         if (!reference.disabled) {
           incoming.set(reference.targetWorkflowKey, (incoming.get(reference.targetWorkflowKey) ?? 0) + 1);
         }
-      } else if (reference.targetWorkflowId) {
+      } else if (reference.targetWorkflowId && !reference.disabled) {
         const set = missingByWorkflow.get(workflow.key) ?? new Set<string>();
         set.add(reference.targetWorkflowId);
         missingByWorkflow.set(workflow.key, set);
+        missingReferencesByWorkflow.set(workflow.key, (missingReferencesByWorkflow.get(workflow.key) ?? 0) + 1);
       }
     }
   }
@@ -60,12 +62,14 @@ function connectedComponents(workflows: Record<string, NormalizedWorkflow>): Wor
     const queue = [start];
     const workflowKeys: string[] = [];
     const missing = new Set<string>();
+    let missingReferenceCount = 0;
     while (queue.length) {
       const current = queue.shift()!;
       if (seen.has(current)) continue;
       seen.add(current);
       workflowKeys.push(current);
       missingByWorkflow.get(current)?.forEach((id) => missing.add(id));
+      missingReferenceCount += missingReferencesByWorkflow.get(current) ?? 0;
       for (const next of adjacency.get(current) ?? []) {
         if (!seen.has(next)) queue.push(next);
       }
@@ -92,6 +96,7 @@ function connectedComponents(workflows: Record<string, NormalizedWorkflow>): Wor
       workflowKeys,
       roots: roots.length ? roots : [...workflowKeys],
       missingTargetIds: [...missing].sort(),
+      missingReferenceCount,
       cyclic,
     });
   }

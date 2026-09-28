@@ -33,7 +33,7 @@ export function Sidebar({ workspace, selectedKey, onSelect, onRemove, onClear, o
                   </div>
                 );
               })}
-              {family.missingTargetIds.length ? <button type="button" className="family-warning" onClick={onViewMissing}>{family.missingTargetIds.length} missing dependenc{family.missingTargetIds.length === 1 ? 'y' : 'ies'} · Click to view</button> : null}
+              {family.missingTargetIds.length ? <button type="button" className="family-warning" onClick={onViewMissing}>{family.missingTargetIds.length} unique missing dependenc{family.missingTargetIds.length === 1 ? 'y' : 'ies'} · {family.missingReferenceCount} reference{family.missingReferenceCount === 1 ? '' : 's'} · Click to view</button> : null}
             </section>
           );
         })}

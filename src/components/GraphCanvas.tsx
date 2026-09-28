@@ -52,6 +52,7 @@ import remarkGfm from 'remark-gfm';
 import type { GraphScene, SceneNode } from '../renderers/scene';
 import { connectionColor } from '../renderers/scene';
 import { exportGraphStage, type ExportFormat } from '../export/exportDiagram';
+import type { CheckpointConflictGroup } from '../simulation/engine';
 
 interface CanvasNodeData extends Record<string, unknown> {
   label?: string;
@@ -79,6 +80,8 @@ interface CanvasNodeData extends Record<string, unknown> {
   isStart?: boolean;
   isLoop?: boolean;
   loopNumbers?: number[];
+  isConflict?: boolean;
+  conflictNumbers?: number[];
   boundaryRole?: string;
   boundaryEntry?: boolean;
   boundaryExit?: boolean;
@@ -106,8 +109,11 @@ interface GraphCanvasProps {
   checkpointIds?: Set<string>;
   startIds?: Set<string>;
   loopGroups?: string[][];
+  conflictGroups?: CheckpointConflictGroup[];
   showStarts?: boolean;
   showLoops?: boolean;
+  showConflicts?: boolean;
+  followActive?: boolean;
 }
 
 const stickyColors: Record<number, { background: string; border: string }> = {
@@ -129,10 +135,12 @@ function stateClasses(data: CanvasNodeData): string {
     data.isCheckpoint ? 'is-checkpoint' : '',
     data.isStart ? 'is-start-node' : '',
     data.isLoop ? 'is-loop-node' : '',
+    data.isConflict ? 'is-conflict-node' : '',
   ].filter(Boolean).join(' ');
 }
 
 const loopColors = ['#6fa8ff', '#f59e70', '#c084fc', '#36c99a', '#e8c75a', '#f472b6', '#67d4e8'];
+const conflictColors = ['#ff6b81', '#f6ad55', '#f472b6', '#c084fc', '#38bdf8', '#84cc16'];
 
 function NodeIndicators({ data }: { data: CanvasNodeData }) {
   return (
@@ -141,6 +149,11 @@ function NodeIndicators({ data }: { data: CanvasNodeData }) {
       {data.isLoop && data.loopNumbers?.length ? (
         <span className="loop-indicators" aria-label={`Loops ${data.loopNumbers.join(', ')}`}>
           {data.loopNumbers.map((number) => <b key={number} style={{ '--loop-color': loopColors[(number - 1) % loopColors.length] } as React.CSSProperties}>{number}</b>)}
+        </span>
+      ) : null}
+      {data.isConflict && data.conflictNumbers?.length ? (
+        <span className="conflict-indicators" aria-label={`Conflicts ${data.conflictNumbers.join(', ')}`}>
+          {data.conflictNumbers.map((number) => <b key={number} style={{ '--conflict-color': conflictColors[(number - 1) % conflictColors.length] } as React.CSSProperties}>C{number}</b>)}
         </span>
       ) : null}
     </>
@@ -301,7 +314,8 @@ function CoreIcon({ glyph }: { glyph: CoreGlyph }) {
 function WorkflowNode({ data }: NodeProps<CanvasNode>) {
   const appearance = appearanceFor(data.nodeType);
   const firstLoop = data.loopNumbers?.[0];
-  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined } as React.CSSProperties;
+  const firstConflict = data.conflictNumbers?.[0];
+  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node ${data.disabled ? 'is-disabled' : ''} ${stateClasses(data)}`} style={style}>
       <div className={`node-tile shape-${appearance.shape}`}>
@@ -373,7 +387,8 @@ function PlaceholderNode({ data }: NodeProps<CanvasNode>) {
   const expandable = data.status === 'collapsed' && typeof data.instancePath === 'string';
   const status = String(data.status ?? 'unknown');
   const firstLoop = data.loopNumbers?.[0];
-  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined } as React.CSSProperties;
+  const firstConflict = data.conflictNumbers?.[0];
+  const style = { '--node-accent': appearance.color, '--loop-color': firstLoop ? loopColors[(firstLoop - 1) % loopColors.length] : undefined, '--conflict-color': firstConflict ? conflictColors[(firstConflict - 1) % conflictColors.length] : undefined } as React.CSSProperties;
   return (
     <div className={`canvas-node placeholder-node status-${status} ${stateClasses(data)}`} style={style} title={String(data.targetLabel ?? data.label ?? '')}>
       <div className={`node-tile shape-${appearance.shape}`}>
@@ -715,9 +730,9 @@ function N8nRoutedEdge(props: EdgeProps) {
     if (node.type === 'sticky') return [];
     const endpoint = node.id === props.source || node.id === props.target;
     if (endpoint && node.type !== 'boundary') return [];
-    // Endpoint boundaries use their actual rectangle so an edge can start or
-    // finish exactly on its side, but cannot turn back through the box.
-    const rect = nodeRect(node, endpoint ? 0 : undefined);
+    // Boundary endpoints retain the same clearance on every outer side. The
+    // contacted side is opened below so the edge can leave the handle cleanly.
+    const rect = nodeRect(node, endpoint && node.type !== 'boundary' ? 0 : undefined);
     // React Flow handle coordinates can differ from the measured boundary by
     // a fraction of a pixel. Keep the box interior solid while moving its
     // contact side just beyond the handle, otherwise the router can mistake a
@@ -850,8 +865,11 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     checkpointIds = EMPTY_IDS,
     startIds = EMPTY_IDS,
     loopGroups = [],
+    conflictGroups = [],
     showStarts = false,
     showLoops = false,
+    showConflicts = false,
+    followActive = false,
   }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -881,9 +899,11 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       isStart: showStarts && startIds.has(node.id),
       isLoop: showLoops && loopGroups.some((group) => group.includes(node.id)),
       loopNumbers: showLoops ? loopGroups.flatMap((group, index) => group.includes(node.id) ? [index + 1] : []) : [],
+      isConflict: showConflicts && conflictGroups.some((group) => group.nodeIds.includes(node.id)),
+      conflictNumbers: showConflicts ? conflictGroups.flatMap((group, index) => group.nodeIds.includes(node.id) ? [index + 1] : []) : [],
     },
   };
-  }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, startIds, loopGroups, showStarts, showLoops]);
+  }), [scene, onTogglePath, activeNodeIds, executedCounts, checkpointIds, startIds, loopGroups, conflictGroups, showStarts, showLoops, showConflicts]);
   const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>(preparedNodes);
   useEffect(() => {
     setNodes((current) => {
@@ -915,6 +935,32 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
       if (secondFrame) window.cancelAnimationFrame(secondFrame);
     };
   }, [instance, scene]);
+
+  useEffect(() => {
+    if (!followActive || !instance || !stageRef.current || !activeNodeIds.size) return;
+    const active = nodes.filter((node) => activeNodeIds.has(node.id));
+    if (!active.length) return;
+    const viewport = instance.getViewport();
+    const stage = stageRef.current.getBoundingClientRect();
+    const bounds = active.reduce((current, node) => {
+      const width = Number(node.measured?.width ?? node.width ?? node.style?.width ?? 0);
+      const height = Number(node.measured?.height ?? node.height ?? node.style?.height ?? 0);
+      return {
+        left: Math.min(current.left, node.position.x * viewport.zoom + viewport.x),
+        right: Math.max(current.right, (node.position.x + width) * viewport.zoom + viewport.x),
+        top: Math.min(current.top, node.position.y * viewport.zoom + viewport.y),
+        bottom: Math.max(current.bottom, (node.position.y + height) * viewport.zoom + viewport.y),
+      };
+    }, { left: Number.POSITIVE_INFINITY, right: Number.NEGATIVE_INFINITY, top: Number.POSITIVE_INFINITY, bottom: Number.NEGATIVE_INFINITY });
+    const safe = { left: stage.width * 0.125, right: stage.width * 0.875, top: stage.height * 0.125, bottom: stage.height * 0.875 };
+    let dx = bounds.left < safe.left ? safe.left - bounds.left : bounds.right > safe.right ? safe.right - bounds.right : 0;
+    let dy = bounds.top < safe.top ? safe.top - bounds.top : bounds.bottom > safe.bottom ? safe.bottom - bounds.bottom : 0;
+    if (bounds.right - bounds.left > safe.right - safe.left) dx = stage.width / 2 - (bounds.left + bounds.right) / 2;
+    if (bounds.bottom - bounds.top > safe.bottom - safe.top) dy = stage.height / 2 - (bounds.top + bounds.bottom) / 2;
+    if (Math.abs(dx) < 24) dx = 0;
+    if (Math.abs(dy) < 24) dy = 0;
+    if (dx || dy) void instance.setViewport({ x: viewport.x + dx, y: viewport.y + dy, zoom: viewport.zoom }, { duration: 450 });
+  }, [activeNodeIds, followActive, instance, nodes]);
 
   const rememberPositions = useCallback((items: CanvasNode[]) => {
     items.forEach((node) => {
@@ -965,11 +1011,15 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     label: edge.label,
     type: 'routed',
     markerEnd: { type: MarkerType.ArrowClosed, color: connectionColor(edge.connectionType), width: 10, height: 10 },
-    style: edge.style,
+    style: {
+      ...edge.style,
+      '--conflict-color': conflictColors[Math.max(0, conflictGroups.findIndex((group) => group.edgeIds.includes(edge.id))) % conflictColors.length],
+    } as React.CSSProperties,
     animated: edge.connectionType !== 'main' && !edge.inactive,
-    className: [edge.inactive ? 'inactive-edge' : '', executedEdgeIds.has(edge.id) ? 'is-simulation-executed-edge' : '', activeEdgeIds.has(edge.id) ? 'is-simulation-active-edge' : ''].filter(Boolean).join(' ') || undefined,
+    className: [edge.inactive ? 'inactive-edge' : '', executedEdgeIds.has(edge.id) ? 'is-simulation-executed-edge' : '', activeEdgeIds.has(edge.id) ? 'is-simulation-active-edge' : '', showConflicts && conflictGroups.some((group) => group.edgeIds.includes(edge.id)) ? 'is-conflict-edge' : ''].filter(Boolean).join(' ') || undefined,
+    data: { conflictNumber: showConflicts ? conflictGroups.findIndex((group) => group.edgeIds.includes(edge.id)) + 1 : 0 },
     hidden: edge.hidden,
-  })), [scene, executedEdgeIds, activeEdgeIds]);
+  })), [scene, executedEdgeIds, activeEdgeIds, conflictGroups, showConflicts]);
 
   const resetNodeLocations = useCallback(() => {
     offsetsRef.current.clear();

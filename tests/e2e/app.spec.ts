@@ -17,7 +17,7 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByRole('dialog', { name: 'Import results' })).toContainText('1 accepted · 1 skipped');
   await page.getByRole('button', { name: 'Close import results' }).click();
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Content Operations');
-  await expect(page.locator('.warning-link')).toContainText('1 missing dependency · Click to view');
+  await expect(page.locator('.warning-link')).toContainText('1 unique missing dependency · 1 reference · Click to view');
   const nodeGeometry = await page.getByTestId('graph-stage').locator('.canvas-node').first().evaluate((node) => {
     const tile = getComputedStyle(node.querySelector('.node-tile')!);
     const footprint = getComputedStyle(node);
@@ -107,6 +107,26 @@ test('imports peers independently, resolves a later child, switches views, colla
   await expect(page.getByRole('button', { name: 'View', exact: true })).toHaveClass(/is-active/);
   await expect(page.getByRole('button', { name: 'Reset view' })).toBeVisible();
   await expect(page.getByTestId('graph-stage').locator('.react-flow__minimap')).toHaveCount(0);
+});
+
+test('shows workflow statistics and clears checkpoints when Random mode is selected', async ({ page }) => {
+  await page.locator('input[type=file]').setInputFiles(example('synthetic-main.json'));
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  await page.getByRole('button', { name: 'Statistics', exact: true }).click();
+  const statistics = page.getByRole('complementary', { name: 'Workflow statistics' });
+  await expect(statistics).toBeVisible();
+  await expect(statistics).toContainText('Total nodes');
+  await expect(statistics).toContainText('Possible end nodes');
+  await expect(statistics).toContainText('1 unique missing');
+  await page.getByRole('button', { name: 'Close statistics' }).click();
+  await expect(statistics).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Custom', exact: true }).click();
+  await page.getByTestId('graph-stage').locator('.react-flow__node').filter({ hasText: 'Prepare brief' }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-checkpoint')).toHaveCount(1);
+  await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Random', exact: true }).click();
+  await expect(page.getByTestId('graph-stage').locator('.is-checkpoint')).toHaveCount(0);
 });
 
 test('routes a backward loop around the node between its endpoints', async ({ page }) => {
@@ -220,15 +240,26 @@ test('routes a backward boundary output sideways and waits for unequal internal 
   await expect(page.getByTestId('graph-stage').locator('.workflow-boundary')).toHaveCount(1);
 
   const boundaryLead = await page.evaluate(() => {
-    const boundaryId = document.querySelector('.react-flow__node-boundary')?.getAttribute('data-id');
+    const boundary = document.querySelector('.react-flow__node-boundary')!;
+    const boundaryId = boundary.getAttribute('data-id');
     const route = [...document.querySelectorAll('[data-route-source]')].find((candidate) => candidate.getAttribute('data-route-source') === boundaryId)!;
     const path = route.querySelector('.react-flow__edge-path') as SVGPathElement;
     const start = path.getPointAtLength(0);
     const after = path.getPointAtLength(10);
-    return { dx: after.x - start.x, dy: after.y - start.y };
+    const rect = boundary.getBoundingClientRect();
+    const matrix = path.getScreenCTM()!;
+    const length = path.getTotalLength();
+    let bottomGap = Number.POSITIVE_INFINITY;
+    for (let step = 1; step < 200; step += 1) {
+      const point = path.getPointAtLength((length * step) / 200);
+      const screen = new DOMPoint(point.x, point.y).matrixTransform(matrix);
+      if (screen.x > rect.left && screen.x < rect.right && screen.y > rect.bottom) bottomGap = Math.min(bottomGap, screen.y - rect.bottom);
+    }
+    return { dx: after.x - start.x, dy: after.y - start.y, bottomGap };
   });
   expect(boundaryLead.dx).toBeGreaterThan(8);
   expect(Math.abs(boundaryLead.dy)).toBeLessThan(0.5);
+  expect(boundaryLead.bottomGap).toBeGreaterThan(10);
 
   await page.getByLabel('Speed').selectOption('250');
   await page.getByRole('button', { name: 'Simulate', exact: true }).click();
