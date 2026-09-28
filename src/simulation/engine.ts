@@ -170,6 +170,29 @@ function canReach(start: string, target: string, outgoing: Map<string, SceneEdge
   return false;
 }
 
+function canReachWithoutLeavingScope(
+  start: string,
+  target: string,
+  outgoing: Map<string, SceneEdge[]>,
+  containingBoundaries: Set<string>,
+): boolean {
+  if (start === target) return true;
+  const seen = new Set([start]);
+  const queue = [start];
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const edge of outgoing.get(id) ?? []) {
+      if (edge.simulationRole === 'release' && edge.simulationBoundary && containingBoundaries.has(edge.simulationBoundary)) continue;
+      if (edge.target === target) return true;
+      if (!seen.has(edge.target)) {
+        seen.add(edge.target);
+        queue.push(edge.target);
+      }
+    }
+  }
+  return false;
+}
+
 function groupedOutputs(edges: SceneEdge[]): SceneEdge[][] {
   const groups = new Map<number, SceneEdge[]>();
   edges.forEach((edge) => groups.set(edge.outputIndex, [...(groups.get(edge.outputIndex) ?? []), edge]));
@@ -233,6 +256,7 @@ function selectOutputGroup(
   usedOutputs: Map<string, Set<number>>,
   remaining: Set<string>,
   visits: Map<string, number>,
+  boundaryScopes: Map<string, Set<string>>,
   mode: SimulationMode,
   random: () => number,
 ): SceneEdge[] | undefined {
@@ -262,7 +286,8 @@ function selectOutputGroup(
     // coverage mode, exhaust fresh outputs that can return to this branching
     // node before taking an output that leaves it for good.
     if (fresh.length) {
-      const returning = candidates.filter((group) => group.some((edge) => canReach(edge.target, nodeId, outgoing)));
+      const scope = boundaryScopes.get(nodeId) ?? new Set<string>();
+      const returning = candidates.filter((group) => group.some((edge) => canReachWithoutLeavingScope(edge.target, nodeId, outgoing, scope)));
       if (returning.length) candidates = returning;
     }
     const scores = candidates.map((group) => {
@@ -303,6 +328,10 @@ export function buildSimulationSteps(
     node.data.simulationOnly && typeof node.data.boundaryId === 'string' ? [[node.id, node.data.boundaryId] as const] : []
   )));
   const nodeById = new Map(scene.nodes.map((node) => [node.id, node]));
+  const boundaryScopes = new Map(scene.nodes.map((node) => [
+    node.id,
+    new Set((node.data.simulationBoundaries as string[] | undefined) ?? []),
+  ]));
   const remaining = new Set([...checkpoints].filter((id) => ids.has(id)));
   const usedOutputs = new Map<string, Set<number>>();
 
@@ -366,7 +395,7 @@ export function buildSimulationSteps(
       const mergedBoundaries = [...new Set(tokens.flatMap((item) => item.boundaries))];
 
       if (mode === 'shortest' && checkpoints.has(id)) continue;
-      const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, visits, mode, random);
+      const selectedGroup = selectOutputGroup(id, groupedOutputs(outgoing.get(id) ?? []), outgoing, usedOutputs, remaining, visits, boundaryScopes, mode, random);
       if (!selectedGroup) continue;
       for (const edge of selectedGroup) {
         let boundaries = mergedBoundaries;

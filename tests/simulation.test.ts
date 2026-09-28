@@ -101,6 +101,26 @@ describe('workflow simulation', () => {
     expect(plan.at(-1)).toBe('end');
   });
 
+  it('does not mistake leaving and re-entering an expanded boundary for a local loop path', () => {
+    const inside = (id: string) => ({ ...node(id), data: { simulationBoundaries: ['box'] } });
+    const sync: GraphScene['nodes'][number] = { ...inside('sync'), kind: 'port', data: { simulationOnly: true, boundaryId: 'box', simulationBoundaries: ['box'] } };
+    const scene: GraphScene = {
+      nodes: [node('root'), inside('loop'), inside('body'), inside('done'), sync, node('after')],
+      edges: [
+        { ...edge('enter', 'root', 'loop'), simulationBoundary: 'box', simulationRole: 'entry' },
+        edge('done-output', 'loop', 'done', 0),
+        edge('body-output', 'loop', 'body', 1),
+        edge('body-return', 'body', 'loop'),
+        { ...edge('arrival', 'done', 'sync'), simulationBoundary: 'box', simulationRole: 'arrival' },
+        { ...edge('release', 'sync', 'after'), simulationBoundary: 'box', simulationRole: 'release' },
+        { ...edge('external-return', 'after', 'loop'), simulationBoundary: 'box', simulationRole: 'entry' },
+      ],
+    };
+    const plan = buildSimulationPlan(scene, 'all', new Set(), () => 0);
+    expect(plan.indexOf('body')).toBeGreaterThan(-1);
+    expect(plan.indexOf('body')).toBeLessThan(plan.indexOf('done'));
+  });
+
   it('looks ahead along the longest active parallel branch for Follow mode', () => {
     const scene: GraphScene = {
       nodes: ['start', 'short', 'long-one', 'long-two', 'merge', 'end'].map(node),
