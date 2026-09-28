@@ -258,6 +258,13 @@ function selectOutputGroup(
     const nearest = Math.min(...distances);
     if (nearest < Number.POSITIVE_INFINITY) candidates = candidates.filter((_group, index) => distances[index] === nearest);
   } else if (mode === 'all') {
+    // A terminal output can make sibling outputs permanently unreachable. In
+    // coverage mode, exhaust fresh outputs that can return to this branching
+    // node before taking an output that leaves it for good.
+    if (fresh.length) {
+      const returning = candidates.filter((group) => group.some((edge) => canReach(edge.target, nodeId, outgoing)));
+      if (returning.length) candidates = returning;
+    }
     const scores = candidates.map((group) => {
       const reachable = reachableNodes(group.map((edge) => edge.target), outgoing, nodeId);
       return [...reachable].reduce((score, id) => score + ((visits.get(id) ?? 0) === 0 ? 1 : 0), 0);

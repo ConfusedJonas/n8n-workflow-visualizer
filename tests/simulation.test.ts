@@ -66,6 +66,19 @@ describe('workflow simulation', () => {
     expect(buildSimulationPlan(scene, 'all', new Set(), () => 0)).toEqual(['start', 'branch', 'long-one', 'long-two', 'long-three']);
   });
 
+  it('runs a returning branch before a terminal branch in All mode', () => {
+    const scene: GraphScene = {
+      nodes: ['start', 'branch', 'loop-body', 'terminal'].map(node),
+      edges: [
+        edge('a', 'start', 'branch'),
+        edge('b', 'branch', 'terminal', 0),
+        edge('c', 'branch', 'loop-body', 1),
+        edge('d', 'loop-body', 'branch'),
+      ],
+    };
+    expect(buildSimulationPlan(scene, 'all', new Set(), () => 0)).toEqual(['start', 'branch', 'loop-body', 'branch', 'terminal']);
+  });
+
   it('traverses a loop only once before using an available exit', () => {
     const scene: GraphScene = {
       nodes: ['start', 'branch', 'loop', 'end'].map(node),

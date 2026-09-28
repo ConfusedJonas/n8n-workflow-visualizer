@@ -98,6 +98,7 @@ button { color: inherit; }
 .checkpoint-help button.checkpoint-clear:hover { border-color: #9f78bd; background: #493456; }
 .simulation-overlays > span:first-child { color: #777783; font-size: 9px; }
 .simulation-note { max-width: 260px; color: #e3b36f; font-size: 9px; line-height: 1.25; }
+.simulation-note.is-prominent { padding: 6px 9px; border: 1px solid #865c30; border-radius: 6px; color: #ffd096; background: #3a291b; font-weight: 700; }
 .graph-stage { min-width: 0; min-height: 0; background: #171719; }
 .graph-stage .react-flow__controls { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.28); }
 .graph-stage .react-flow__controls-button { border-bottom-color: var(--border); color: #ddd; background: #202027; }

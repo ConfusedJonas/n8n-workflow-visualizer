@@ -18,7 +18,7 @@ import {
   saveUiState,
   saveWorkflow,
 } from './storage/db';
-import { createWorkspace, getMissingReferences } from './workspace/resolve';
+import { createWorkspace, descendantWorkflowKeys, getMissingReferences } from './workspace/resolve';
 import './styles.css';
 
 type ViewMode = 'view' | 'dependency';
@@ -63,6 +63,7 @@ export default function App() {
   const [showConflicts, setShowConflicts] = useState(false);
   const [followSimulation, setFollowSimulation] = useState(false);
   const [showStatistics, setShowStatistics] = useState(false);
+  const [simulationNotice, setSimulationNotice] = useState<string>();
   const [importResults, setImportResults] = useState<ImportResult[]>([]);
   const [busy, setBusy] = useState(true);
   const [exportError, setExportError] = useState<string>();
@@ -103,6 +104,7 @@ export default function App() {
     setSimulationPlan([]);
     setExecutedCounts(new Map());
     setExecutedEdgeIds(new Set());
+    setSimulationNotice(undefined);
   }, [effectiveKey]);
 
   const scene = useMemo(() => {
@@ -249,6 +251,7 @@ export default function App() {
     if (view !== 'view' || !['custom', 'shortest'].includes(simulationMode) || simulationRunning) return;
     const candidate = scene.nodes.find((node) => node.id === id);
     if (!candidate || !['workflow', 'placeholder', 'port'].includes(candidate.kind)) return;
+    setSimulationNotice(undefined);
     setCheckpoints((current) => {
       const next = simulationMode === 'shortest' ? new Set<string>() : new Set(current);
       if (next.has(id)) next.delete(id); else next.add(id);
@@ -257,6 +260,11 @@ export default function App() {
   }, [view, simulationMode, simulationRunning, scene.nodes]);
 
   const startSimulation = useCallback(() => {
+    if (simulationMode === 'shortest' && checkpoints.size !== 1) {
+      setSimulationNotice('Select one destination node before starting Shortest mode.');
+      return;
+    }
+    setSimulationNotice(undefined);
     const plan = buildSimulationSteps(scene, simulationMode, checkpoints);
     setSimulationPlan(plan);
     setSimulationIndex(0);
@@ -287,12 +295,16 @@ export default function App() {
   const statistics = useMemo<WorkflowStatistics | undefined>(() => {
     if (!workflow) return undefined;
     const originalAnalysis = analyzeSimulationGraph(buildOriginalScene(workflow));
+    const descendantKeys = effectiveKey ? descendantWorkflowKeys(workspace, effectiveKey) : new Set<string>();
+    const descendantWorkflows = [...descendantKeys].flatMap((key) => workspace.workflows[key] ? [workspace.workflows[key]] : []);
     const targets = new Set(workflow.subworkflowReferences.map((reference) => (
       reference.targetWorkflowKey ?? reference.targetWorkflowId ?? reference.embeddedWorkflow?.key ?? `${reference.sourceMode}:${reference.nodeId}`
     )));
     return {
       nodes: workflow.nodes.length,
       connections: workflow.edges.length,
+      nodesIncludingSubworkflows: descendantWorkflows.reduce((sum, item) => sum + item.nodes.length, 0),
+      connectionsIncludingSubworkflows: descendantWorkflows.reduce((sum, item) => sum + item.edges.length, 0),
       subworkflows: targets.size,
       subworkflowCalls: workflow.subworkflowReferences.length,
       loops: originalAnalysis.loopGroups.length,
@@ -301,7 +313,7 @@ export default function App() {
       missingDependencies: missingTargetIds.size,
       missingReferences: missing.length,
     };
-  }, [workflow, missing.length, missingTargetIds.size]);
+  }, [workflow, effectiveKey, workspace, missing.length, missingTargetIds.size]);
 
   return (
     <main
@@ -347,15 +359,15 @@ export default function App() {
             </div>
             <div className={`simulation-bar ${view !== 'view' ? 'is-hidden' : ''}`}>
               <div className="simulation-primary">
-                <button className={`button simulation-run ${simulationRunning ? 'is-running' : ''}`} type="button" disabled={!simulationRunning && simulationMode === 'shortest' && checkpoints.size !== 1} title={simulationMode === 'shortest' && checkpoints.size !== 1 ? 'Select one destination node first' : undefined} onClick={simulationRunning ? stopSimulation : startSimulation}>
+                <button className={`button simulation-run ${simulationRunning ? 'is-running' : ''}`} type="button" onClick={simulationRunning ? stopSimulation : startSimulation}>
                   {simulationRunning ? <Square size={14} /> : <Play size={14} />}{simulationRunning ? 'Stop' : 'Simulate'}
                 </button>
                 <label>Speed<select value={simulationSpeed} onChange={(event) => setSimulationSpeed(Number(event.target.value))}><option value={250}>Fast · 0.25s</option><option value={700}>Normal · 0.7s</option><option value={1400}>Slow · 1.4s</option><option value={2500}>Very slow · 2.5s</option></select></label>
                 <div className="mode-switch" aria-label="Simulation mode">
-                  <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
-                  <button type="button" className={simulationMode === 'custom' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationMode('custom'); }}><Flag size={13} /> Custom</button>
-                  <button type="button" className={simulationMode === 'all' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('all'); }}><ScanSearch size={13} /> All</button>
-                  <button type="button" className={simulationMode === 'shortest' ? 'is-active' : ''} onClick={() => { stopSimulation(); setCheckpoints(new Set()); setSimulationMode('shortest'); }}><Route size={13} /> Shortest</button>
+                  <button type="button" className={simulationMode === 'random' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationNotice(undefined); setCheckpoints(new Set()); setSimulationMode('random'); }}><Shuffle size={13} /> Random</button>
+                  <button type="button" className={simulationMode === 'custom' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationNotice(undefined); setSimulationMode('custom'); }}><Flag size={13} /> Custom</button>
+                  <button type="button" className={simulationMode === 'all' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationNotice(undefined); setCheckpoints(new Set()); setSimulationMode('all'); }}><ScanSearch size={13} /> All</button>
+                  <button type="button" className={simulationMode === 'shortest' ? 'is-active' : ''} onClick={() => { stopSimulation(); setSimulationNotice(undefined); setCheckpoints(new Set()); setSimulationMode('shortest'); }}><Route size={13} /> Shortest</button>
                 </div>
                 <button type="button" aria-pressed={repeatSimulation} className={`repeat-toggle ${repeatSimulation ? 'is-active' : ''}`} onClick={() => setRepeatSimulation((value) => !value)} title="Automatically start a new simulation when the current one finishes"><RefreshCw size={13} /> Repeat</button>
                 <button type="button" aria-pressed={followSimulation} className={`repeat-toggle ${followSimulation ? 'is-active' : ''}`} onClick={() => setFollowSimulation((value) => !value)} title="Smoothly pan when active nodes leave the central viewing area"><ScanSearch size={13} /> Follow</button>
@@ -370,6 +382,7 @@ export default function App() {
                 <button type="button" aria-pressed={showLoops} className={showLoops ? 'is-active' : ''} onClick={() => setShowLoops((value) => !value)}><Repeat2 size={12} /> Individual loops</button>
                 {checkpointConflict ? <button type="button" aria-pressed={showConflicts} className={showConflicts ? 'is-active' : ''} onClick={() => setShowConflicts((value) => !value)}><Flag size={12} /> Conflicting branches</button> : null}
                 {checkpointConflict ? <span className="simulation-note">Some checkpoints conflict; one compatible branch will be chosen randomly.</span> : null}
+                {simulationNotice ? <span className="simulation-note is-prominent" role="status">{simulationNotice}</span> : null}
               </div>
             </div>
             <GraphCanvas

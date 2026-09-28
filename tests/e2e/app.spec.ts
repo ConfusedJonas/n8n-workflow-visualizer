@@ -116,6 +116,8 @@ test('shows workflow statistics and clears checkpoints when Random mode is selec
   const statistics = page.getByRole('complementary', { name: 'Workflow statistics' });
   await expect(statistics).toBeVisible();
   await expect(statistics).toContainText('Total nodes');
+  await expect(statistics).toContainText('Nodes incl. sub-workflows');
+  await expect(statistics).toContainText('Connections incl. sub-workflows');
   await expect(statistics).toContainText('Possible end nodes');
   await expect(statistics).toContainText('1 unique missing');
   await page.getByRole('button', { name: 'Close statistics' }).click();
@@ -127,6 +129,10 @@ test('shows workflow statistics and clears checkpoints when Random mode is selec
   await expect(page.getByRole('button', { name: 'Clear', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Random', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-checkpoint')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Shortest', exact: true }).click();
+  await page.getByRole('button', { name: 'Simulate', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('Select one destination node');
 });
 
 test('routes a backward loop around the node between its endpoints', async ({ page }) => {
@@ -198,12 +204,18 @@ test('animates expanded workflow entries in parallel and keeps the executed trai
   ]);
   await page.getByRole('button', { name: 'Close import results' }).click();
   await page.getByText('Content Operations', { exact: true }).first().click();
+  await page.getByRole('button', { name: 'Reset view' }).click();
+  await page.waitForTimeout(350);
+  const zoomBeforeFollow = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  await page.getByRole('button', { name: 'Follow', exact: true }).click();
   await page.getByLabel('Speed').selectOption('700');
   await page.getByRole('button', { name: 'Simulate', exact: true }).click();
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(2, { timeout: 2200 });
   const activeLabels = await page.getByTestId('graph-stage').locator('.is-simulation-active strong').allTextContents();
   expect(activeLabels.sort()).toEqual(['Build outline', 'Research context']);
+  const zoomDuringFollow = await page.locator('.react-flow__viewport').evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).a);
+  expect(zoomDuringFollow).toBeCloseTo(zoomBeforeFollow, 5);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(4);
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-active')).toHaveCount(1, { timeout: 1500 });
   await expect(page.getByTestId('graph-stage').locator('.is-simulation-executed')).toHaveCount(5);

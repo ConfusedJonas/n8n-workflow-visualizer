@@ -3,6 +3,8 @@ import { GitBranch, GitMerge, Network, Repeat2, SquareStack, Workflow, X } from 
 export interface WorkflowStatistics {
   nodes: number;
   connections: number;
+  nodesIncludingSubworkflows: number;
+  connectionsIncludingSubworkflows: number;
   subworkflows: number;
   subworkflowCalls: number;
   loops: number;
@@ -22,6 +24,8 @@ export function StatisticsSidebar({ name, statistics, onClose }: StatisticsSideb
   const rows = [
     { label: 'Total nodes', value: statistics.nodes, icon: Workflow },
     { label: 'Connections', value: statistics.connections, icon: Network },
+    { label: 'Nodes incl. sub-workflows', value: statistics.nodesIncludingSubworkflows, icon: Workflow },
+    { label: 'Connections incl. sub-workflows', value: statistics.connectionsIncludingSubworkflows, icon: Network },
     { label: 'Sub-workflows', value: statistics.subworkflows, detail: `${statistics.subworkflowCalls} call${statistics.subworkflowCalls === 1 ? '' : 's'}`, icon: SquareStack },
     { label: 'Loops', value: statistics.loops, icon: Repeat2 },
     { label: 'Branches', value: statistics.branches, icon: GitBranch },
