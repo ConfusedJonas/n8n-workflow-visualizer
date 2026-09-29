@@ -4,6 +4,10 @@ A browser-based viewer for n8n workflow JSON exports. Import related workflows, 
 
 This is an independent community project and is not affiliated with or endorsed by n8n.
 
+## Use it online
+
+**[Open n8n Workflow Visualizer](https://confusedjonas.github.io/n8n-workflow-visualizer/)**
+
 ![Expanded synthetic workflow family](docs/assets/readme.png)
 
 ## Dependency view
@@ -79,16 +83,6 @@ Duplicate exported IDs replace the stored workflow; the last match in an import 
 Only static imported database IDs and literal embedded workflows expand. Expressions are never evaluated or name-matched. File and URL source modes stay inert external placeholders.
 
 An expanded workflow hides exactly one enabled Execute Sub-workflow Trigger and records all of its outgoing targets as possible starts. If the trigger is missing, disabled, or ambiguous, the boundary shows a warning and graph roots are recorded conservatively. Outside connections terminate at the workflow boundary; invisible logical links preserve simulation continuity without drawing cross-boundary lines.
-
-## GitHub Pages
-
-The repository includes a Pages workflow, but deployment is gated and disabled by default. To opt in later:
-
-1. Explicitly enable Pages in the repository settings.
-2. Add a repository variable named `ENABLE_PAGES_DEPLOYMENT` with value `true`.
-3. Run the **Deploy GitHub Pages** workflow or push to `main`.
-
-The Vite base path is derived from `GITHUB_REPOSITORY`, so a repository rename is handled on the next build. Be aware that a Pages site can be public even when its source repository is private, and private-repository Pages availability depends on the GitHub plan.
 
 ## License
 

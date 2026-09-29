@@ -9,8 +9,7 @@ permissions:
   contents: read
 
 jobs:
-  gate:
-    if: vars.ENABLE_PAGES_DEPLOYMENT == 'true'
+  deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
