@@ -1,10 +1,18 @@
 # n8n Workflow Visualizer
 
-A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect and rearrange their exported layout, map parent/child dependencies, expand static sub-workflow calls inline, or animate a graph-only execution simulation.
+A browser-based viewer for n8n workflow JSON exports. Import related workflows, inspect their exported layout, map parent/child dependencies, expand sub-workflow calls inline, and animate possible execution routes.
 
 This is an independent community project and is not affiliated with or endorsed by n8n.
 
 ![Expanded synthetic workflow family](docs/assets/readme.png)
+
+## Dependency view
+
+The dependency view shows how imported workflows call one another. Missing workflow exports are clearly identified and can be highlighted from the toolbar.
+
+| Missing dependency | All dependencies imported |
+| --- | --- |
+| ![Dependency view with a missing workflow](docs/assets/dependency-missing.png) | ![Dependency view with all workflows imported](docs/assets/dependency-complete.png) |
 
 ## What it does
 
@@ -17,7 +25,7 @@ This is an independent community project and is not affiliated with or endorsed 
   - **Dependency** — deterministic Dagre layout for the selected workflow family, including clickable missing-dependency warnings.
 - Connects external edges only to expanded workflow boundaries. Internal entry and end nodes remain visually unchanged, with no cross-boundary lines or port circles.
 - Supports free node movement, multi-selection, camera reset, and restoring every node to its exported/generated location.
-- Includes a larger bottom-left HUD toggle that hides the library, title, view/status, and statistics panels while retaining the workflow, canvas controls, and simulation toolbar.
+- Includes a bottom-left focused-view toggle that hides the library, title, view/status, and statistics panels while retaining the workflow, canvas controls, and simulation toolbar.
 - Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Expanded workflows wait for every active internal branch before releasing one continuation to the caller.
 - Includes four simulation modes: **Random** chooses branches, **Custom** routes toward one or more checkpoints, **All** favors the route with the greatest reachable node coverage, and **Shortest** finds the fewest-node route to one selected destination. Conflicting Custom checkpoints can be highlighted as separately numbered branch groups.
 - Offers Repeat and Follow controls. Follow uses next-step look-ahead and smoothly accelerates for distant nodes without changing the user's live zoom. Clear executed removes the retained route and execution counters.
@@ -28,8 +36,6 @@ This is an independent community project and is not affiliated with or endorsed 
 - Exports the graph stage as PNG (up to 2× within safe canvas limits) or SVG.
 - Routes orthogonal connections around node bodies while retaining every exported output and input index.
 
-All processing is local. The application has no analytics, service worker, external fonts/CDNs, or application network calls. It never opens imported file paths or fetches imported URLs. Production builds include a CSP with `connect-src 'none'`.
-
 ## Try the synthetic sample
 
 Run the app, then import both files in [`examples`](examples):
@@ -38,8 +44,6 @@ Run the app, then import both files in [`examples`](examples):
 npm install
 npm run dev
 ```
-
-The sample is synthetic and contains no user workflow data. Real exports supplied during development were used only for local smoke testing and are not present in this repository.
 
 ## Using the viewer
 
@@ -66,7 +70,7 @@ npm run e2e
 
 The parser's public entry point is [`src/n8n/index.ts`](src/n8n/index.ts). Compatibility findings and the pinned n8n source snapshot are in [`docs/n8n-compatibility.md`](docs/n8n-compatibility.md); subsystem boundaries and security choices are in [`docs/architecture.md`](docs/architecture.md).
 
-Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the local verification checklist and private-data rules. Security issues should follow [`SECURITY.md`](SECURITY.md).
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the local verification checklist. Security issues should follow [`SECURITY.md`](SECURITY.md).
 
 ## Import and resolution rules
 
@@ -85,12 +89,6 @@ The repository includes a Pages workflow, but deployment is gated and disabled b
 3. Run the **Deploy GitHub Pages** workflow or push to `main`.
 
 The Vite base path is derived from `GITHUB_REPOSITORY`, so a repository rename is handled on the next build. Be aware that a Pages site can be public even when its source repository is private, and private-repository Pages availability depends on the GitHub plan.
-
-## Security and scope
-
-The repository contains only synthetic examples and screenshots. No credentials, API keys, environment files, user workflow exports, analytics, telemetry, or runtime network integrations are required. Imported Markdown is sanitized, raw HTML is disabled, remote media is blocked, and workflow URL/file references are displayed but never opened automatically.
-
-V1 does not support `.n8np` archives, changing workflow definitions, node inspectors, manual mapping for dynamic references, external workflow lookup, or real workflow execution. Dragged positions are viewer-only and are not written back to imported JSON.
 
 ## License
 

@@ -145,8 +145,8 @@ test('hides the surrounding HUD while keeping simulation and canvas controls', a
   const resetBox = await reset.boundingBox();
   const hideBox = await hide.boundingBox();
   if (!resetBox || !hideBox) throw new Error('Canvas controls were unavailable.');
-  expect(hideBox.width).toBeGreaterThan(resetBox.width);
-  expect(hideBox.height).toBeGreaterThan(resetBox.height);
+  expect(hideBox.width).toBe(resetBox.width);
+  expect(hideBox.height).toBe(resetBox.height);
 
   await hide.click();
   await expect(page.locator('.app-shell')).toHaveClass(/is-hud-hidden/);

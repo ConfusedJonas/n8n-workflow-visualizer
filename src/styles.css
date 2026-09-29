@@ -118,9 +118,6 @@ button { color: inherit; }
 .graph-stage .react-flow__controls-button { border-bottom-color: var(--border); color: #ddd; background: #202027; }
 .graph-stage .react-flow__controls-button:hover { background: #2b2b34; }
 .graph-stage .react-flow__controls-button svg { fill: currentColor; }
-.graph-stage .react-flow__controls-button.hud-toggle-control { width: 38px; height: 38px; color: #f1f1f5; background: #292932; }
-.graph-stage .react-flow__controls-button.hud-toggle-control:hover { background: #383843; }
-.graph-stage .react-flow__controls-button.hud-toggle-control svg { width: 18px; height: 18px; }
 .graph-stage.is-video-recording .react-flow__controls,
 .graph-stage.is-video-recording .react-flow__attribution { opacity: 0; pointer-events: none; }
 .graph-stage .react-flow__edge-textbg { fill: #1d1d24; }

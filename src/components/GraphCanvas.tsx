@@ -27,9 +27,8 @@ import {
   Globe2,
   Layers3,
   ListTree,
+  Maximize,
   MousePointer2,
-  PanelLeftClose,
-  PanelLeftOpen,
   SquarePen,
   Split,
   Workflow,
@@ -1140,13 +1139,12 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
             <ResetNodesIcon />
           </ControlButton>
           <ControlButton
-            className="hud-toggle-control"
             title={hudHidden ? 'Show HUD' : 'Hide HUD'}
             aria-label={hudHidden ? 'Show HUD' : 'Hide HUD'}
             aria-pressed={hudHidden}
             onClick={onToggleHud}
           >
-            {hudHidden ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            <Maximize size={16} />
           </ControlButton>
         </Controls>
       </ReactFlow>
