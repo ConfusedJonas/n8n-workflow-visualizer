@@ -74,8 +74,6 @@ npm run e2e
 
 The parser's public entry point is [`src/n8n/index.ts`](src/n8n/index.ts). Compatibility findings and the pinned n8n source snapshot are in [`docs/n8n-compatibility.md`](docs/n8n-compatibility.md); subsystem boundaries and security choices are in [`docs/architecture.md`](docs/architecture.md).
 
-Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the local verification checklist. Security issues should follow [`SECURITY.md`](SECURITY.md).
-
 ## Import and resolution rules
 
 Duplicate exported IDs replace the stored workflow; the last match in an import batch wins. Valid files in a batch remain imported when another file fails. ID-less exports receive a deterministic local identity but cannot satisfy database-ID references.

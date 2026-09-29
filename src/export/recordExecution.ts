@@ -35,6 +35,26 @@ function evenDimension(value: number): number {
   return Math.max(2, Math.round(value / 2) * 2);
 }
 
+interface CropTargetApi {
+  fromElement(element: Element): Promise<unknown>;
+}
+
+type CroppableDisplayTrack = MediaStreamTrack & {
+  cropTo?: (target: unknown) => Promise<void>;
+};
+
+async function cropToGraphStage(track: MediaStreamTrack, stage: HTMLElement): Promise<boolean> {
+  const cropTarget = (globalThis as typeof globalThis & { CropTarget?: CropTargetApi }).CropTarget;
+  const croppableTrack = track as CroppableDisplayTrack;
+  if (!cropTarget?.fromElement || typeof croppableTrack.cropTo !== 'function') return false;
+  try {
+    await croppableTrack.cropTo(await cropTarget.fromElement(stage));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function downloadExecutionRecording(recording: ExecutionRecordingResult): void {
   const url = URL.createObjectURL(recording.blob);
   const anchor = document.createElement('a');
@@ -59,7 +79,7 @@ export async function startExecutionRecording(stage: HTMLElement, workflowName: 
   }
 
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: { ideal: 30, max: 30 }, displaySurface: 'browser' },
+    video: { frameRate: { ideal: 30, max: 30 }, displaySurface: 'browser', cursor: 'never' },
     audio: false,
     preferCurrentTab: true,
     selfBrowserSurface: 'include',
@@ -74,6 +94,9 @@ export async function startExecutionRecording(stage: HTMLElement, workflowName: 
     throw new Error('Choose This Tab in the sharing dialog so the workflow canvas can be recorded without the HUD.');
   }
 
+  stage.classList.add('is-video-recording');
+  const croppedToStage = await cropToGraphStage(displayTrack, stage);
+
   const source = document.createElement('video');
   source.muted = true;
   source.playsInline = true;
@@ -81,10 +104,12 @@ export async function startExecutionRecording(stage: HTMLElement, workflowName: 
   try {
     await source.play();
   } catch (error) {
+    stage.classList.remove('is-video-recording');
     displayStream.getTracks().forEach((track) => track.stop());
     throw error;
   }
   if (!source.videoWidth || !source.videoHeight) {
+    stage.classList.remove('is-video-recording');
     displayStream.getTracks().forEach((track) => track.stop());
     throw new Error('The selected tab did not provide a video frame. Please try recording again.');
   }
@@ -92,18 +117,18 @@ export async function startExecutionRecording(stage: HTMLElement, workflowName: 
   const initialRect = stage.getBoundingClientRect();
   const sourceScaleX = source.videoWidth / window.innerWidth;
   const sourceScaleY = source.videoHeight / window.innerHeight;
-  const naturalWidth = initialRect.width * sourceScaleX;
-  const naturalHeight = initialRect.height * sourceScaleY;
+  const naturalWidth = croppedToStage ? source.videoWidth : initialRect.width * sourceScaleX;
+  const naturalHeight = croppedToStage ? source.videoHeight : initialRect.height * sourceScaleY;
   const outputScale = Math.min(1, 3840 / Math.max(1, naturalWidth), 2160 / Math.max(1, naturalHeight));
   const canvas = document.createElement('canvas');
   canvas.width = evenDimension(naturalWidth * outputScale);
   canvas.height = evenDimension(naturalHeight * outputScale);
   const context = canvas.getContext('2d', { alpha: false });
   if (!context) {
+    stage.classList.remove('is-video-recording');
     displayStream.getTracks().forEach((track) => track.stop());
     throw new Error('Could not create the video recording canvas.');
   }
-  stage.classList.add('is-video-recording');
 
   let drawingFrame = 0;
   let drawing = true;
@@ -113,17 +138,21 @@ export async function startExecutionRecording(stage: HTMLElement, workflowName: 
     const scaleY = source.videoHeight / window.innerHeight;
     context.fillStyle = '#171719';
     context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(
-      source,
-      Math.max(0, rect.left * scaleX),
-      Math.max(0, rect.top * scaleY),
-      Math.max(1, rect.width * scaleX),
-      Math.max(1, rect.height * scaleY),
-      0,
-      0,
-      canvas.width,
-      canvas.height,
-    );
+    if (croppedToStage) {
+      context.drawImage(source, 0, 0, source.videoWidth, source.videoHeight, 0, 0, canvas.width, canvas.height);
+    } else {
+      context.drawImage(
+        source,
+        Math.max(0, rect.left * scaleX),
+        Math.max(0, rect.top * scaleY),
+        Math.max(1, rect.width * scaleX),
+        Math.max(1, rect.height * scaleY),
+        0,
+        0,
+        canvas.width,
+        canvas.height,
+      );
+    }
     if (drawing) drawingFrame = window.requestAnimationFrame(draw);
   };
   draw();

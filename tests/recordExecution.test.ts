@@ -3,6 +3,7 @@ import { downloadExecutionRecording, startExecutionRecording } from '../src/expo
 
 class FakeTrack extends EventTarget {
   stop = vi.fn();
+  cropTo = vi.fn().mockResolvedValue(undefined);
   getSettings = vi.fn(() => ({ displaySurface: 'browser' }) as MediaTrackSettings);
 }
 
@@ -45,6 +46,9 @@ describe('execution video recording', () => {
     } as unknown as MediaStream;
     const getDisplayMedia = vi.fn().mockResolvedValue(displayStream);
     Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getDisplayMedia } });
+    const cropTarget = { stage: true };
+    const fromElement = vi.fn().mockResolvedValue(cropTarget);
+    vi.stubGlobal('CropTarget', { fromElement });
     vi.stubGlobal('MediaRecorder', FakeRecorder);
     vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
     vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => undefined);
@@ -65,7 +69,13 @@ describe('execution video recording', () => {
     vi.spyOn(stage, 'getBoundingClientRect').mockReturnValue({ x: 100, y: 160, left: 100, top: 160, right: 900, bottom: 760, width: 800, height: 600, toJSON: () => ({}) });
 
     const recording = await startExecutionRecording(stage, 'My / Workflow');
-    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({ audio: false, preferCurrentTab: true }));
+    expect(getDisplayMedia).toHaveBeenCalledWith(expect.objectContaining({
+      audio: false,
+      preferCurrentTab: true,
+      video: expect.objectContaining({ cursor: 'never', displaySurface: 'browser' }),
+    }));
+    expect(fromElement).toHaveBeenCalledWith(stage);
+    expect(displayTrack.cropTo).toHaveBeenCalledWith(cropTarget);
     expect(stage).toHaveClass('is-video-recording');
     const result = await recording.stop();
 

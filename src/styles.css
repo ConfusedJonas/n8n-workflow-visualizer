@@ -120,6 +120,8 @@ button { color: inherit; }
 .graph-stage .react-flow__controls-button svg { fill: currentColor; }
 .graph-stage.is-video-recording .react-flow__controls,
 .graph-stage.is-video-recording .react-flow__attribution { opacity: 0; pointer-events: none; }
+.graph-stage.is-video-recording,
+.graph-stage.is-video-recording * { cursor: none !important; }
 .graph-stage .react-flow__edge-textbg { fill: #1d1d24; }
 .graph-stage .react-flow__edge-text { fill: #d6d6dc; font-size: 10px; }
 .graph-stage .react-flow__handle { width: 9px; height: 9px; border: 2px solid #17171d; }

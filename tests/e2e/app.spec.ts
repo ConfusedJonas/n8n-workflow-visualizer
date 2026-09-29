@@ -444,6 +444,8 @@ test('records the graph stage and asks before downloading the video', async ({ p
   await page.getByRole('button', { name: 'Record video', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Stop recording', exact: true })).toBeVisible({ timeout: 3000 });
   await expect(page.getByTestId('graph-stage')).toHaveClass(/is-video-recording/);
+  await expect(page.getByTestId('graph-stage')).toHaveCSS('cursor', 'none');
+  await expect(page.getByTestId('graph-stage').locator('.react-flow__controls')).toHaveCSS('opacity', '0');
   await page.waitForTimeout(650);
   await page.getByRole('button', { name: 'Stop recording', exact: true }).click();
 
