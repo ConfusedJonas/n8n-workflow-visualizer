@@ -82,6 +82,7 @@ export default function App() {
   const [dragging, setDragging] = useState(false);
   const [recordingVideo, setRecordingVideo] = useState(false);
   const [pendingRecording, setPendingRecording] = useState<ExecutionRecordingResult>();
+  const [hudHidden, setHudHidden] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const graphRef = useRef<GraphCanvasHandle>(null);
   const recordingRef = useRef<ExecutionRecording>();
@@ -404,7 +405,7 @@ export default function App() {
 
   return (
     <main
-      className={`app-shell ${dragging ? 'is-dragging' : ''} ${showStatistics && workflow ? 'has-statistics' : ''}`}
+      className={`app-shell ${dragging ? 'is-dragging' : ''} ${showStatistics && workflow ? 'has-statistics' : ''} ${hudHidden && workflow ? 'is-hud-hidden' : ''}`}
       onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
       onDragOver={(event) => event.preventDefault()}
       onDragLeave={(event) => { if (event.currentTarget === event.target) setDragging(false); }}
@@ -469,12 +470,11 @@ export default function App() {
                     : simulationMode === 'all' ? <span className="checkpoint-help">Chooses the route with the greatest reachable node coverage.</span>
                       : <span className="checkpoint-help">Branches are chosen randomly.</span>}
               </div>
-              <div className="simulation-overlays" aria-label="Simulation highlights">
-                <span>Highlights:</span>
+              {checkpointConflict || simulationNotice ? <div className="simulation-overlays" aria-label="Simulation messages">
                 {checkpointConflict ? <button type="button" aria-pressed={showConflicts} className={showConflicts ? 'is-active' : ''} onClick={() => setShowConflicts((value) => !value)}><Flag size={12} /> Conflicting branches</button> : null}
                 {checkpointConflict ? <span className="simulation-note">Some checkpoints conflict; one compatible branch will be chosen randomly.</span> : null}
                 {simulationNotice ? <span className="simulation-note is-prominent" role="status">{simulationNotice}</span> : null}
-              </div>
+              </div> : null}
             </div>
             <GraphCanvas
               ref={graphRef}
@@ -492,6 +492,8 @@ export default function App() {
               followActive={followSimulation && simulationRunning}
               followNodeId={followNodeId}
               followLookaheadNodeId={followLookaheadNodeId}
+              hudHidden={hudHidden}
+              onToggleHud={() => setHudHidden((value) => !value)}
             />
             {exportError ? <div className="toast error"><Info size={16} />{exportError}<button onClick={() => setExportError(undefined)} aria-label="Dismiss"><X size={15} /></button></div> : null}
           </>

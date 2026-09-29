@@ -19,6 +19,19 @@ button { color: inherit; }
 
 .app-shell { display: grid; grid-template-columns: 278px minmax(0, 1fr); width: 100%; height: 100%; background: #101014; }
 .app-shell.has-statistics { grid-template-columns: 278px minmax(0, 1fr) 286px; }
+.app-shell.is-hud-hidden { grid-template-columns: minmax(0, 1fr); }
+.app-shell.has-statistics.is-hud-hidden { grid-template-columns: minmax(0, 1fr); }
+.app-shell.is-hud-hidden > .sidebar,
+.app-shell.is-hud-hidden .topbar,
+.app-shell.is-hud-hidden .viewbar,
+.app-shell.is-hud-hidden > .statistics-sidebar,
+.app-shell.is-hud-hidden > .import-panel,
+.app-shell.is-hud-hidden > .drop-overlay { display: none; }
+.app-shell.is-hud-hidden .workspace { grid-template-rows: auto 1fr; }
+.app-shell.is-hud-hidden .simulation-bar { grid-row: 1; }
+.app-shell.is-hud-hidden .graph-stage { grid-row: 2; }
+.app-shell.is-hud-hidden .react-flow__attribution { display: none; }
+.app-shell.is-hud-hidden .toast { display: none; }
 .sidebar { display: flex; min-width: 0; flex-direction: column; border-right: 1px solid var(--border); background: #141419; }
 .brand { display: flex; gap: 12px; align-items: center; height: 76px; padding: 0 20px; border-bottom: 1px solid var(--border); }
 .brand > span { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; color: #fff; background: linear-gradient(145deg, #ff7d67, #df4d52); box-shadow: 0 8px 22px rgba(255, 91, 79, .2); }
@@ -98,7 +111,6 @@ button { color: inherit; }
 .checkpoint-help { color: #9999a5; font-size: 9px; }
 .checkpoint-help button.checkpoint-clear { margin-left: 5px; padding: 4px 8px; border: 1px solid #69517c; border-radius: 6px; color: #ead8fa; background: #352940; cursor: pointer; }
 .checkpoint-help button.checkpoint-clear:hover { border-color: #9f78bd; background: #493456; }
-.simulation-overlays > span:first-child { color: #777783; font-size: 9px; }
 .simulation-note { max-width: 260px; color: #e3b36f; font-size: 9px; line-height: 1.25; }
 .simulation-note.is-prominent { padding: 6px 9px; border: 1px solid #865c30; border-radius: 6px; color: #ffd096; background: #3a291b; font-weight: 700; }
 .graph-stage { min-width: 0; min-height: 0; background: #171719; }
@@ -106,6 +118,9 @@ button { color: inherit; }
 .graph-stage .react-flow__controls-button { border-bottom-color: var(--border); color: #ddd; background: #202027; }
 .graph-stage .react-flow__controls-button:hover { background: #2b2b34; }
 .graph-stage .react-flow__controls-button svg { fill: currentColor; }
+.graph-stage .react-flow__controls-button.hud-toggle-control { width: 38px; height: 38px; color: #f1f1f5; background: #292932; }
+.graph-stage .react-flow__controls-button.hud-toggle-control:hover { background: #383843; }
+.graph-stage .react-flow__controls-button.hud-toggle-control svg { width: 18px; height: 18px; }
 .graph-stage.is-video-recording .react-flow__controls,
 .graph-stage.is-video-recording .react-flow__attribution { opacity: 0; pointer-events: none; }
 .graph-stage .react-flow__edge-textbg { fill: #1d1d24; }

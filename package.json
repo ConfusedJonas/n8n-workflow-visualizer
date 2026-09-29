@@ -2,6 +2,16 @@
   "name": "n8n-workflow-visualizer",
   "private": true,
   "version": "1.0.0",
+  "description": "Privacy-first browser visualizer and structural simulator for n8n workflow exports.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ConfusedJonas/n8n-workflow-visualizer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ConfusedJonas/n8n-workflow-visualizer/issues"
+  },
+  "homepage": "https://github.com/ConfusedJonas/n8n-workflow-visualizer#readme",
   "type": "module",
   "engines": {
     "node": ">=22.12"

@@ -137,6 +137,34 @@ test('shows workflow statistics and clears checkpoints when Random mode is selec
   await expect(page.getByRole('status')).toContainText('Select one destination node');
 });
 
+test('hides the surrounding HUD while keeping simulation and canvas controls', async ({ page }) => {
+  await page.locator('input[type=file]').setInputFiles(example('synthetic-main.json'));
+  await page.getByRole('button', { name: 'Close import results' }).click();
+  const reset = page.getByRole('button', { name: 'Reset view' });
+  const hide = page.getByRole('button', { name: 'Hide HUD' });
+  const resetBox = await reset.boundingBox();
+  const hideBox = await hide.boundingBox();
+  if (!resetBox || !hideBox) throw new Error('Canvas controls were unavailable.');
+  expect(hideBox.width).toBeGreaterThan(resetBox.width);
+  expect(hideBox.height).toBeGreaterThan(resetBox.height);
+
+  await hide.click();
+  await expect(page.locator('.app-shell')).toHaveClass(/is-hud-hidden/);
+  await expect(page.locator('.sidebar')).toBeHidden();
+  await expect(page.locator('.topbar')).toBeHidden();
+  await expect(page.locator('.viewbar')).toBeHidden();
+  await expect(page.locator('.simulation-bar')).toBeVisible();
+  await expect(page.getByTestId('graph-stage')).toBeVisible();
+  await expect(reset).toBeVisible();
+  await expect(page.locator('.react-flow__attribution')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Show HUD' }).click();
+  await expect(page.locator('.app-shell')).not.toHaveClass(/is-hud-hidden/);
+  await expect(page.locator('.sidebar')).toBeVisible();
+  await expect(page.locator('.topbar')).toBeVisible();
+  await expect(page.locator('.viewbar')).toBeVisible();
+});
+
 test('routes a backward loop around the node between its endpoints', async ({ page }) => {
   const loop = {
     id: 'routing-loop', name: 'Routing loop', nodes: [

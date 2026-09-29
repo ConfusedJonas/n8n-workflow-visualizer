@@ -28,6 +28,8 @@ import {
   Layers3,
   ListTree,
   MousePointer2,
+  PanelLeftClose,
+  PanelLeftOpen,
   SquarePen,
   Split,
   Workflow,
@@ -110,6 +112,8 @@ interface GraphCanvasProps {
   followActive?: boolean;
   followNodeId?: string;
   followLookaheadNodeId?: string;
+  hudHidden?: boolean;
+  onToggleHud?: () => void;
 }
 
 const stickyColors: Record<number, { background: string; border: string }> = {
@@ -854,6 +858,8 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
     followActive = false,
     followNodeId,
     followLookaheadNodeId,
+    hudHidden = false,
+    onToggleHud,
   }, ref) => {
   const stageRef = useRef<HTMLDivElement>(null);
   const [instance, setInstance] = useState<ReactFlowInstance | null>(null);
@@ -1132,6 +1138,15 @@ const GraphCanvasInner = forwardRef<GraphCanvasHandle, GraphCanvasProps>(
           </ControlButton>
           <ControlButton title="Reset node locations" aria-label="Reset node locations" onClick={resetNodeLocations}>
             <ResetNodesIcon />
+          </ControlButton>
+          <ControlButton
+            className="hud-toggle-control"
+            title={hudHidden ? 'Show HUD' : 'Hide HUD'}
+            aria-label={hudHidden ? 'Show HUD' : 'Hide HUD'}
+            aria-pressed={hudHidden}
+            onClick={onToggleHud}
+          >
+            {hudHidden ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
           </ControlButton>
         </Controls>
       </ReactFlow>

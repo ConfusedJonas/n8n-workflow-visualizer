@@ -9,3 +9,13 @@ outputs/
 *.local
 *.log
 *.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*secrets*.json
+private-data/

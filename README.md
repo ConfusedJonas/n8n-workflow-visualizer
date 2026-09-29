@@ -2,6 +2,8 @@
 
 A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import several workflows, inspect and rearrange their exported layout, map parent/child dependencies, expand static sub-workflow calls inline, or animate a graph-only execution simulation.
 
+This is an independent community project and is not affiliated with or endorsed by n8n.
+
 ![Expanded synthetic workflow family](docs/assets/readme.png)
 
 ## What it does
@@ -15,6 +17,7 @@ A privacy-first, browser-only visualizer for n8n workflow JSON exports. Import s
   - **Dependency** — deterministic Dagre layout for the selected workflow family, including clickable missing-dependency warnings.
 - Connects external edges only to expanded workflow boundaries. Internal entry and end nodes remain visually unchanged, with no cross-boundary lines or port circles.
 - Supports free node movement, multi-selection, camera reset, and restoring every node to its exported/generated location.
+- Includes a larger bottom-left HUD toggle that hides the library, title, view/status, and statistics panels while retaining the workflow, canvas controls, and simulation toolbar.
 - Simulates graph traversal without executing node logic. Parallel fan-out runs in the same fixed-duration step, joins wait for all live branches, and the completed route remains highlighted with repeat counts. Expanded workflows wait for every active internal branch before releasing one continuation to the caller.
 - Includes four simulation modes: **Random** chooses branches, **Custom** routes toward one or more checkpoints, **All** favors the route with the greatest reachable node coverage, and **Shortest** finds the fewest-node route to one selected destination. Conflicting Custom checkpoints can be highlighted as separately numbered branch groups.
 - Offers Repeat and Follow controls. Follow uses next-step look-ahead and smoothly accelerates for distant nodes without changing the user's live zoom. Clear executed removes the retained route and execution counters.
@@ -41,7 +44,7 @@ The sample is synthetic and contains no user workflow data. Real exports supplie
 ## Using the viewer
 
 1. Select **Import JSON** (or drag JSON exports onto the window). Import a parent workflow and any static database-ID sub-workflows you want resolved.
-2. Use **View** to inspect or expand workflow calls. Click an expanded boundary to collapse it, or a collapsed Execute Workflow node to expand it. Drag nodes freely, Ctrl-click to select several, and use the lower-left reset controls to restore the camera or exported node positions.
+2. Use **View** to inspect or expand workflow calls. Click an expanded boundary to collapse it, or a collapsed Execute Workflow node to expand it. Drag nodes freely, Ctrl-click to select several, and use the lower-left controls to restore the camera/node positions or hide the surrounding HUD.
 3. Use **Dependency** to see the workflow family and unresolved calls. Missing warnings are clickable, and the Highlight missing toggle makes unresolved calls pulse.
 4. Choose a simulation mode and speed. In Custom mode, click nodes to add checkpoints. In Shortest mode, click one destination. Simulation is structural only: it follows connections and never runs n8n node logic. Use **Record video** and choose the current tab to capture the canvas. Review its duration and size before downloading or discarding it.
 5. Open **Statistics** for a summary of the selected workflow, or export the full graph bounds as PNG/SVG.
@@ -62,6 +65,8 @@ npm run e2e
 ```
 
 The parser's public entry point is [`src/n8n/index.ts`](src/n8n/index.ts). Compatibility findings and the pinned n8n source snapshot are in [`docs/n8n-compatibility.md`](docs/n8n-compatibility.md); subsystem boundaries and security choices are in [`docs/architecture.md`](docs/architecture.md).
+
+Contributions are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the local verification checklist and private-data rules. Security issues should follow [`SECURITY.md`](SECURITY.md).
 
 ## Import and resolution rules
 
